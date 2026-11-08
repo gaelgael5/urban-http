@@ -1,0 +1,177 @@
+# Cas d'usage curl — inventaire et prise en charge
+
+*(English version: [curl-use-cases.md](curl-use-cases.md))*
+
+Ce document liste les cas d'usage de curl pertinents pour un **appel HTTP applicatif**,
+et le statut de chacun dans le parser `urban-http`.
+Pour le panorama complet de curl (protocoles non-HTTP : mails SMTP, FTP, WebSocket…),
+voir **[curl-coverage.md](curl-coverage.fr.md)**.
+
+**Légende des statuts :**
+
+| Statut | Signification |
+|---|---|
+| ✅ Supporté | Reproduit fidèlement dans l'appel HTTP généré |
+| 🟡 Partiel | Pris en charge avec une approximation documentée (warning `partial-option`) |
+| ⚪ Ignoré | Option propre au CLI, sans effet sur la requête HTTP (acceptée, parfois signalée en `info`) |
+| ❌ Non supporté | Détecté et signalé par un warning, mais non appliqué |
+
+---
+
+## 1. Syntaxe de la ligne de commande
+
+| Cas d'usage | Exemple | Statut |
+|---|---|---|
+| Commande simple | `curl https://api.example.com` | ✅ |
+| Mot `curl` absent (arguments seuls) | `-X GET https://e.com` | ✅ |
+| `curl.exe`, prompt `$` ou `sudo` en tête | `$ curl.exe ...` | ✅ |
+| Quotes simples `'...'` | `curl -d '{"a":1}'` | ✅ |
+| Quotes doubles `"..."` avec échappements `\" \\ \$` | `curl -H "X: \"v\""` | ✅ |
+| Continuations de ligne bash `\` | `curl -X POST \`↵`  https://e.com` | ✅ |
+| Continuations de ligne cmd Windows `^` (export Postman) | `curl -X POST ^`↵` "https://e.com"` | ✅ |
+| Doubles quotes doublées `""` du cmd Windows | `curl -d "{""a"":1}" ^`↵ | ✅ |
+| Quoting ANSI-C `$'...'` (`\n`, `\t`, `\xHH`, `\uHHHH`...) | `curl -d $'a\nb'` | ✅ |
+| Options courtes groupées | `curl -sSL https://e.com` | ✅ |
+| Valeur collée à l'option courte | `curl -XPOST https://e.com` | ✅ |
+| Forme `--option=valeur` (tolérance : curl ne l'accepte pas) | `--max-time=5` | ✅ |
+| Négation `--no-<option>` | `--no-location` | ✅ |
+| Option inconnue | `--frobnicate` | ❌ warning `unknown-option`, parsing poursuivi |
+| Lecture depuis stdin (`-`) | `curl -d @- ...` | ❌ warning |
+| Fichier de configuration | `-K, --config` | ❌ warning |
+
+## 2. URL et méthode
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| URL positionnelle | `curl https://e.com` | ✅ |
+| URL explicite | `--url` | ✅ |
+| Schéma manquant → `http://` ajouté (comme curl) | `curl example.com` | ✅ (info `default-scheme`) |
+| Plusieurs URLs avec la même configuration | `curl -H "X: 1" url1 url2` | ✅ (une requête par URL) |
+| Requêtes indépendantes enchaînées | `--next` | ✅ |
+| Méthode explicite | `-X, --request` | ✅ |
+| HEAD | `-I, --head` | ✅ (`-X` l'emporte, comme curl) |
+| GET forcé avec données en query string | `-G, --get` | ✅ |
+| Méthode implicite POST (si corps) / PUT (si `-T`) / GET sinon | — | ✅ |
+| Globbing d'URL : alternatives `{a,b}`, plages `[1-10]`, `[01-10]` (zéro-padding), `[a-z]`, pas `[0-100:25]`, produit cartésien | `curl http://e.com/[1-10]` | ✅ développé en plusieurs requêtes (limite : 500 URLs) |
+| Motif de globbing invalide (ex : hôte IPv6 `[::1]`) ou trop large | — | 🟡 warning `url-globbing`, URL utilisée telle quelle |
+| Désactiver le globbing | `-g, --globoff` | ✅ |
+
+## 3. En-têtes
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| En-tête simple, ordre préservé, multiples | `-H "Accept: application/json"` | ✅ |
+| En-tête à valeur vide | `-H "X-Empty;"` | ✅ |
+| Suppression d'un en-tête généré | `-H "User-Agent:"` | ✅ |
+| User-Agent | `-A, --user-agent` | ✅ |
+| Referer | `-e, --referer` | ✅ (`;auto` ignoré, info) |
+| Range | `-r, --range` → `Range: bytes=...` | ✅ |
+| Compression | `--compressed` → `Accept-Encoding: gzip, deflate, br` | ✅ (urllib décompresse selon le serveur) |
+| En-têtes depuis un fichier | `-H @fichier` | ❌ warning |
+
+## 4. Corps de requête
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| Données POST (Content-Type urlencoded par défaut) | `-d, --data, --data-ascii` | ✅ |
+| Plusieurs `-d` concaténés avec `&` | `-d a=1 -d b=2` | ✅ |
+| Données brutes (`@` non interprété) | `--data-raw` | ✅ |
+| Données binaires | `--data-binary` | ✅ |
+| Encodage URL de la valeur (`contenu`, `=contenu`, `nom=contenu`) | `--data-urlencode` | ✅ |
+| Raccourci JSON (body + `Content-Type` + `Accept`) | `--json '{"a":1}'` | ✅ |
+| Paramètres de query encodés, indépendants du corps | `--url-query 'q=crème brûlée'` (formes de `--data-urlencode` + `+brut`) | ✅ |
+| Corps depuis un fichier | `-d @fichier` | ✅ (CR/LF supprimés comme curl ; `file_reader` injectable) |
+| Upload de fichier brut (PUT) | `-T, --upload-file` | ✅ |
+| Formulaire multipart | `-F, --form` | ✅ (corps multipart construit, boundary généré) |
+| Champ fichier avec attributs | `-F "f=@x.png;type=image/png;filename=y.png"` | ✅ |
+| Contenu de fichier comme champ texte | `-F "notes=<notes.txt"` | ✅ |
+| Valeur littérale sans interprétation | `--form-string` | ✅ |
+| En-têtes par partie multipart | `-F "...;headers=..."` | ❌ info |
+
+## 5. Authentification
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| Basic | `-u user:pass` → `Authorization: Basic ...` | ✅ |
+| Bearer | `--oauth2-bearer TOKEN` → `Authorization: Bearer ...` | ✅ |
+| Basic explicite | `--basic` | ✅ |
+| Digest | `--digest` | ✅ via `execute()` : négociation en deux requêtes (MD5, MD5-sess, SHA-256, SHA-256-sess ; qop=auth ou RFC 2069). `qop=auth-int` ❌ |
+| NTLM / Negotiate (Kerberos) | `--ntlm, --negotiate` | ❌ warning |
+| Signature AWS | `--aws-sigv4` | ❌ warning |
+
+## 6. Cookies
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| Cookies inline | `-b "a=1; b=2"` → en-tête `Cookie` | ✅ |
+| Cookies depuis un fichier (format Netscape, `#HttpOnly_` inclus) | `-b cookies.txt` | ✅ (filtrage domaine / chemin / expiration / secure, comme curl ; `file_reader` injectable) |
+| Écriture du cookie jar | `-c, --cookie-jar` | ⚪ info (propre au CLI) |
+| Ignorer les cookies de session | `-j, --junk-session-cookies` | ⚪ |
+
+## 7. Redirections
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| Suivre les redirections | `-L, --location` | ✅ (`-L` = suivi ; sinon `redirect: manual` côté urllib) |
+| Limite de redirections | `--max-redirs N` | 🟡 conservé dans le modèle |
+| Credentials conservés après redirection | `--location-trusted` | 🟡 suit les redirections, info sur la limite |
+| Comportement 301/302/303 | `--post301/302/303` | 🟡 sémantique standard urllib |
+
+## 8. TLS, proxy et réseau
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| Ignorer la vérification TLS | `-k, --insecure` | ✅ (contexte SSL non vérifié) |
+| CA personnalisée, certificat client, mot de passe de clé | `--cacert, --capath, --cert (-E), --key, --pass` | ✅ (contexte SSL : `load_verify_locations` / `load_cert_chain`) |
+| Proxy HTTP(S), avec authentification | `-x, --proxy, --proxy-user (-U)` | ✅ (via `urllib.ProxyHandler`) |
+| Version HTTP | `--http1.1, --http2, --http3` | ⚪ négociée par la plateforme, conservée à titre informatif |
+| IPv4/IPv6, versions TLS | `-4, -6, --tlsv1.2, --tlsv1.3` | ⚪ |
+| Résolution DNS forcée, redirection de connexion, socket Unix | `--resolve, --connect-to, --unix-socket` | ✅ (Host et SNI d'origine préservés) |
+| Interface réseau, DNS/DoH | `--interface, --dns-servers, --doh-url` | ❌ warning |
+| Identifiants depuis netrc | `-n/--netrc, --netrc-file, --netrc-optional` | ✅ (module `netrc`, Basic) |
+
+## 9. Timeouts et robustesse
+
+| Cas d'usage | Options | Statut |
+|---|---|---|
+| Timeout global | `-m, --max-time` → `timeout` de `urlopen` | ✅ |
+| Timeout de connexion | `--connect-timeout` | 🟡 approximé par le timeout global |
+| Retries sur erreurs transitoires (408, 429, 500, 502, 503, 504) | `--retry N` | ✅ (backoff exponentiel 1s, 2s, 4s... comme curl) |
+| Délai entre retries | `--retry-delay` | ✅ |
+| Limitation de débit (suffixes k/M/G) | `--limit-rate` | ✅ (plafonne la lecture de la réponse) |
+| Reprise de transfert (offset explicite) | `-C/--continue-at` | ✅ via en-tête `Range` (`-C -` auto : non géré sans fichier de sortie) |
+
+## 10. Options CLI sans effet sur la requête (acceptées, ignorées)
+
+`-s` (silent), `-S` (show-error), `-v` (verbose), `-i` (include), `-o` (output), `-O` (remote-name),
+`-J`, `-D` (dump-header), `-w` (write-out), `-f` (fail), `--fail-with-body`, `-#` (progress-bar),
+`--trace`, `--trace-ascii`, `--help`, `--version`, `--raw`, `--path-as-is`, `--styled-output`,
+`--keepalive-time`, `--no-keepalive`.
+
+Elles sont parsées sans erreur pour que n'importe quelle commande copiée d'un terminal
+ou d'un export Postman passe telle quelle.
+
+## 11. Variables
+
+Activées en passant un dictionnaire `variables` à `parse_curl(commande, variables)`.
+Guide complet : [variables.md](variables.fr.md).
+
+| Cas d'usage | Exemple | Statut |
+|---|---|---|
+| Placeholder Postman `{{nom}}` (URL, en-têtes, corps, partout) | `curl {{baseUrl}}/users` | ✅ |
+| Variable shell `$NOM` / `${NOM}`, à nu ou dans des quotes doubles | `curl -H "Authorization: Bearer $TOKEN" ...` | ✅ (uniquement si `variables` est fourni) |
+| `$NOM` dans des quotes simples : jamais substitué (comme bash) | `curl -d '$TOKEN' ...` | ✅ |
+| Valeur avec espaces : reste dans son token (pas de word-splitting bash) | — | ✅ (volontaire, plus sûr pour un SDK) |
+| Dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | `curl --json '{"id": "{{$guid}}"}' ...` | ✅ générées à chaque occurrence, comme Postman |
+| Variables natives curl 8.3+ | `--variable host=api.e.com --expand-url 'https://{{host}}/x'`, `--variable %NOM[=défaut]` | ✅ (substitution globale, superset des `--expand-*` de curl) |
+| Autres dynamiques Postman (`{{$randomCity}}`…) | — | ❌ warning `unsupported-dynamic-variable`, laissées telles quelles |
+| Variable non résolue (`{{x}}` ou `$X` absent de la map) | — | 🟡 laissée telle quelle + warning (`unresolved-variable` / `unresolved-shell-variable`) |
+
+---
+
+## Et Postman ?
+
+L'export « Copy as cURL » de Postman (bash **et** cmd Windows) est couvert par ce parser :
+continuations `^`, quotes doublées `""`, `--data-raw`, etc.
+L'import direct du format **Postman Collection v2.0 / v2.1 (JSON)** est assuré par
+`parse_postman()` — voir [postman-collections.md](postman-collections.fr.md).

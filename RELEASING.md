@@ -1,18 +1,20 @@
-# Publier une version sur PyPI
+# Releasing to PyPI
 
-La CI publie automatiquement sur PyPI quand on **pousse un tag de version**.
-L'authentification utilise le **Trusted Publishing (OIDC)** de PyPI : **aucun
-token n'est stocké** dans le dépôt.
+*(Version française : [RELEASING.fr.md](RELEASING.fr.md))*
 
-## Configuration (une seule fois)
+CI publishes to PyPI automatically when a **version tag is pushed**.
+Authentication uses PyPI **Trusted Publishing (OIDC)**: **no token is stored** in
+the repository.
 
-### 1. Déclarer le « trusted publisher » sur PyPI
+## One-time setup
 
-Sur <https://pypi.org>, projet `urban-http` → *Settings* → *Publishing* (ou, avant
-le tout premier envoi, <https://pypi.org/manage/account/publishing/> → *pending
-publisher*), ajouter un éditeur GitHub Actions avec :
+### 1. Declare the trusted publisher on PyPI
 
-| Champ | Valeur |
+On <https://pypi.org>, project `urban-http` → *Settings* → *Publishing* (or, before
+the very first upload, <https://pypi.org/manage/account/publishing/> → *pending
+publisher*), add a GitHub Actions publisher with:
+
+| Field | Value |
 |---|---|
 | PyPI Project Name | `urban-http` |
 | Owner | `gaelgael5` |
@@ -20,40 +22,38 @@ publisher*), ajouter un éditeur GitHub Actions avec :
 | Workflow name | `publish.yml` |
 | Environment name | `pypi` |
 
-(Pour TestPyPI, répéter la même chose sur <https://test.pypi.org> avec
-l'environment `testpypi`.)
+(For TestPyPI, do the same on <https://test.pypi.org> with the `testpypi`
+environment.)
 
-### 2. Créer les environnements GitHub
+### 2. Create the GitHub environments
 
-Dans le dépôt → *Settings* → *Environments*, créer `pypi` (et `testpypi` si
-souhaité). On peut y ajouter une règle de protection (révision obligatoire avant
-publication).
+In the repository → *Settings* → *Environments*, create `pypi` (and `testpypi` if
+desired). You can add a protection rule there (required review before publishing).
 
-## Publier une version
+## Publishing a version
 
-1. Mettre à jour la version dans `pyproject.toml` (`project.version`).
-2. Commiter et pousser sur `main`.
-3. Créer et pousser le tag correspondant :
+1. Bump the version in `pyproject.toml` (`project.version`).
+2. Commit and push to `main`.
+3. Create and push the matching tag:
 
    ```bash
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-Le workflow `publish.yml` vérifie que le tag (`v0.2.0`) correspond bien à
-`project.version` (`0.2.0`), construit le sdist + wheel, les passe à
-`twine check`, puis publie sur PyPI.
+The `publish.yml` workflow checks that the tag (`v0.2.0`) matches
+`project.version` (`0.2.0`), builds the sdist + wheel, runs `twine check`, then
+publishes to PyPI.
 
-### Tester d'abord sur TestPyPI
+### Test on TestPyPI first
 
-Lancer manuellement le workflow *Publier sur PyPI* (onglet Actions →
-*Run workflow*) en choisissant la cible `testpypi`.
+Run the *Publier sur PyPI* workflow manually (Actions tab → *Run workflow*)
+choosing the `testpypi` target.
 
-## Repli : token d'API
+## Fallback: API token
 
-Si le Trusted Publishing n'est pas souhaité, créer un token sur PyPI, l'ajouter
-en secret `PYPI_API_TOKEN`, et passer le mot de passe à l'action dans
-`publish.yml` :
+If you would rather not use Trusted Publishing, create a token on PyPI, add it as
+the `PYPI_API_TOKEN` secret, and pass the password to the action in `publish.yml`:
 
 ```yaml
       - uses: pypa/gh-action-pypi-publish@release/v1
