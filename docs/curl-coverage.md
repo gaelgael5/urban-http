@@ -3,8 +3,7 @@
 curl est un couteau suisse multi-protocoles : il sait envoyer des mails (SMTP),
 transférer des fichiers (FTP, SFTP), lire des boîtes mail (IMAP, POP3), parler
 MQTT, TELNET, LDAP… **urban-http a un périmètre volontairement plus étroit :
-transformer une commande curl en appel HTTP applicatif (`fetch`)**, dans Node ou
-un navigateur.
+transformer une commande curl en appel HTTP applicatif (Python / `urllib`)**.
 
 Ce document fait le tour de **tout** ce que sait faire curl, domaine par domaine.
 La règle du SDK reste la même partout : ce qui est hors périmètre est **détecté
@@ -17,15 +16,15 @@ et signalé par un warning à code stable**, jamais ignoré en silence.
 
 ## 1. Protocoles
 
-Le cœur HTTP passe par `fetch`. Les autres protocoles sont désormais couverts
-par des **adaptateurs Node optionnels** (voir [protocols.md](protocols.md)) :
+Le cœur HTTP passe par `urllib` (bibliothèque standard). Les autres protocoles
+sont couverts par des **adaptateurs** (voir [protocols.md](protocols.md)) :
 le SDK les analyse en requête structurée et les exécute via une bibliothèque
 éprouvée. Les protocoles sans adaptateur produisent toujours le warning
 **`unsupported-protocol`** avec une alternative suggérée.
 
 | Protocole | Ce que curl en fait | Statut | Moteur |
 |---|---|---|---|
-| **HTTP / HTTPS** | le cœur | ✅ | fetch |
+| **HTTP / HTTPS** | le cœur | ✅ | urllib (stdlib) |
 | **SMTP / SMTPS** | envoi de mails (`--mail-from`, `--mail-rcpt`, corps via `-T`) | ✅ | nodemailer |
 | **FTP / FTPS** | transfert de fichiers (`-Q`, `--ftp-create-dirs`, `-l`) | ✅ | basic-ftp |
 | **SFTP** | transfert via SSH | ✅ | ssh2 |
@@ -34,7 +33,7 @@ le SDK les analyse en requête structurée et les exécute via une bibliothèque
 | **TFTP** | transfert UDP par blocs | ✅ | node:dgram |
 | **FILE** | lecture/écriture de fichier local | ✅ | node:fs |
 | **SMB / SMBS** | partage de fichiers | ✅ | @marsaud/smb2 |
-| **WS / WSS** | WebSocket (envoi/réception) | ✅ | API `WebSocket` native (navigateur + Node ≥ 22) |
+| **WS / WSS** | WebSocket (envoi/réception) | ✅ | websockets (extra) |
 | **IMAP(S)** | lecture de boîte mail | ❌ | imapflow… |
 | **SCP** | copie via SSH | ❌ | ssh2 (manuel) |
 | **LDAP(S), TELNET, DICT, GOPHER(S), RTSP, RTMP** | divers | ❌ | — |
@@ -73,7 +72,7 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 | Fonction | Statut |
 |---|---|
 | Cookies inline (`-b "a=1"`) | ✅ |
-| Lecture d'un fichier Netscape (`-b cookies.txt`), filtrage domaine/chemin/expiration/secure | ✅ Node (navigateur : via `readFile`) |
+| Lecture d'un fichier Netscape (`-b cookies.txt`), filtrage domaine/chemin/expiration/secure | ✅ (`file_reader` injectable) |
 | Écriture du cookie jar (`-c`), moteur de session entre requêtes | ⚪ propre au CLI — l'application garde la main sur l'état |
 | `-j/--junk-session-cookies` | ⚪ |
 
@@ -81,7 +80,7 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 
 | Fonction | Statut |
 |---|---|
-| `-k/--insecure` | ✅ Node (paquet `undici`) / ❌ navigateur (impossible par conception) |
+| `-k/--insecure` | ✅ (contexte SSL non vérifié) |
 | CA personnalisée (`--cacert`, `--capath`), certificat client (`--cert`, `--key`, `--pass`) | ❌ signalés |
 | Épinglage (`--pinnedpubkey`), ciphers (`--ciphers`, `--tls13-ciphers`) | ❌ / ⚪ |
 | Versions TLS (`--tlsv1.2`, `--tlsv1.3`) | ⚪ négociées par la plateforme |
@@ -90,7 +89,7 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 
 | Fonction | Statut |
 |---|---|
-| Proxy HTTP(S) (`-x/--proxy`), auth Basic proxy (`-U/--proxy-user`) | ✅ Node via `undici.ProxyAgent` / ❌ navigateur |
+| Proxy HTTP(S) (`-x/--proxy`), auth Basic proxy (`-U/--proxy-user`) | ✅ via `urllib.ProxyHandler` |
 | SOCKS (`--socks4`, `--socks4a`, `--socks5`, `--socks5-hostname`) | ❌ signalés |
 | `--proxy-digest`, `--proxy-ntlm`, `--noproxy` | ❌ / ⚪ |
 
@@ -98,8 +97,8 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 
 | Fonction | Statut |
 |---|---|
-| `-L`, `--location-trusted`, `--max-redirs`, `--post30x` | ✅ / 🟡 (sémantique fetch) |
-| `-m/--max-time` → `AbortSignal.timeout` | ✅ |
+| `-L`, `--location-trusted`, `--max-redirs`, `--post30x` | ✅ / 🟡 (sémantique urllib) |
+| `-m/--max-time` → `timeout` de `urlopen` | ✅ |
 | `--connect-timeout` | 🟡 approximé |
 | `--retry`, `--retry-delay` (backoff exponentiel sur 408/429/5xx) | ✅ |
 | `--retry-all-errors`, `--retry-max-time`, `--retry-connrefused` | ⚪ acceptées, non différenciées |
@@ -160,8 +159,8 @@ quelle : `-o`, `-O`, `-J`, `-D`, `-i`, `-s`, `-S`, `-v`, `-#`, `-w/--write-out`,
   corps, auth (Basic/Bearer/Digest), cookies, variables, redirections, retries,
   timeout, globbing, multipart — plus l'import Postman.
 - **Les principaux protocoles non-HTTP sont couverts** par des adaptateurs
-  (SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB côté Node ; WebSocket côté
-  Node **et** navigateur) — voir [protocols.md](protocols.md). Le cœur reste
+  (SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket) — voir
+  [protocols.md](protocols.md). Le cœur reste
   compartimenté : les adaptateurs à dépendance ne sont chargés qu'à l'usage.
 - **Restent hors périmètre** IMAP, LDAP, TELNET, DICT, GOPHER, RTSP, SCP… :
   signalés par `unsupported-protocol` avec une alternative.

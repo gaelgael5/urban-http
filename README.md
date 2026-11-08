@@ -1,153 +1,139 @@
 # urban-http
 
-SDK pour transformer une commande **curl** ou une **collection Postman** en
-**appels exécutables** dans une application — Node ≥ 18 ou navigateur.
-HTTP via `fetch`, et les autres protocoles de curl (SMTP, FTP, SFTP, POP3,
-MQTT, TFTP, FILE, SMB, WebSocket) via des adaptateurs — WebSocket tournant aussi
-dans le navigateur.
+SDK **Python** pour transformer une commande **curl** ou une **collection Postman**
+en **appel exécutable** — HTTP via la bibliothèque standard, et les autres
+protocoles de curl (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket) via
+des adaptateurs dont les dépendances sont gérées en **extras PyPI**.
 
 ```
-commande curl ───▶ parseCurl() ────┐
-                                   ├──▶ HttpRequestModel ──▶ toFetch() / execute()
-collection Postman ─▶ parsePostman() ┘
-                   └▶ parseCommand() ──▶ ProtocolRequest ──▶ run() (adaptateur)
+commande curl ───▶ parse_curl() ────┐
+                                    ├──▶ HttpRequestModel ──▶ prepare_request() / execute()
+collection Postman ─▶ parse_postman() ┘
+                    └▶ parse_command() ──▶ ProtocolRequest ──▶ run() (adaptateur)
 ```
+
+## Installation
+
+```bash
+pip install urban-http                       # cœur : HTTP + SMTP/FTP/POP3/TFTP/FILE (stdlib, zéro dépendance)
+pip install "urban-http[sftp,mqtt,smb]"      # extras pour les protocoles qui requièrent une bibliothèque
+pip install "urban-http[all]"                # tout
+```
+
+Le **cœur n'a aucune dépendance obligatoire**. Chaque protocole qui s'appuie sur
+une bibliothèque tierce est un extra :
+
+| Extra | Protocole | Bibliothèque PyPI |
+|---|---|---|
+| `sftp` | SFTP | paramiko |
+| `mqtt` | MQTT / MQTTS | paho-mqtt |
+| `smb` | SMB / SMBS | smbprotocol |
+| `websocket` | WS / WSS | websockets |
+| `web` | site de test local | flask (optionnel) |
+
+SMTP, FTP/FTPS, POP3, TFTP et FILE utilisent uniquement la bibliothèque standard
+(`smtplib`, `ftplib`, `poplib`, `socket`, `open`) : aucun extra.
 
 ## Utilisation
 
-```ts
-import { parseCurl, execute, toFetch, toFetchCode } from "urban-http";
+```python
+from urban_http import parse_curl, execute
 
-const { requests, warnings } = parseCurl(
-  `curl -X POST https://api.example.com/items \\
-     -H 'Content-Type: application/json' \\
-     -d '{"name": "clavier"}' \\
-     -u alice:secret -m 10`
-);
+result = parse_curl(
+    "curl -X POST https://api.example.com/items "
+    "-H 'Content-Type: application/json' -d '{\"name\": \"clavier\"}' -u alice:secret -m 10"
+)
+req = result.requests[0]
+req.method          # "POST"
+req.url             # "https://api.example.com/items"
+req.header("Content-Type")  # "application/json"
 
-// 1. Inspecter la requête analysée
-const req = requests[0];
-req.method;       // "POST"
-req.url;          // "https://api.example.com/items"
-req.headers;      // [["Content-Type", "application/json"]]
-req.body?.text;   // '{"name": "clavier"}'
-
-// 2. L'exécuter directement (fetch, avec timeout et retries de curl)
-const { response } = await execute(req);
-
-// 3. Ou récupérer les paramètres fetch pour les utiliser soi-même
-const { url, init } = toFetch(req);
-await fetch(url, init);
-
-// 4. Ou générer un extrait de code fetch lisible
-console.log(toFetchCode(req));
+resp = execute(req).response
+print(resp.status, resp.text())
 ```
 
-Tout ce qui n'est pas reproductible (Digest, proxy, fichiers de cookies…) est **signalé
-dans `warnings`** plutôt que silencieusement ignoré : chaque warning a un `code` stable,
-un `message` en français et un niveau (`info` | `warning` | `error`).
+Tout ce qui n'est pas reproductible est **signalé dans `warnings`** (jamais ignoré
+en silence) : chaque warning a un `code` stable, un `message` et un niveau.
 
 ## Variables
 
-Les deux parsers acceptent `options.variables` :
+```python
+# {{nom}} partout, et $NOM / ${NOM} comme dans le shell (quotes doubles et nu)
+parse_curl('curl -H "Authorization: Bearer $TOKEN" {{baseUrl}}/users',
+           {"baseUrl": "https://api.example.com", "TOKEN": "tok-42"})
 
-```ts
-// Placeholders {{nom}} partout, et $NOM / ${NOM} comme dans le shell
-// (quotes doubles et arguments nus ; jamais dans les quotes simples)
-const { requests } = parseCurl(
-  `curl -H "Authorization: Bearer $TOKEN" {{baseUrl}}/users`,
-  { variables: { baseUrl: "https://api.example.com", TOKEN: "tok-42" } }
-);
-
-// Les dynamiques Postman sont générées automatiquement :
-// {{$guid}}, {{$randomUUID}}, {{$timestamp}}, {{$isoTimestamp}}, {{$randomInt}}
-parseCurl(`curl --json '{"id": "{{$guid}}"}' {{baseUrl}}/items`, { variables });
-
-// Un export d'environnement Postman se charge en une ligne
-import { parsePostmanEnvironment } from "urban-http";
-const variables = parsePostmanEnvironment(envJson);
+# Dynamiques Postman générées : {{$guid}}, {{$randomUUID}}, {{$timestamp}}, {{$isoTimestamp}}, {{$randomInt}}
+from urban_http import parse_postman_environment
+variables = parse_postman_environment(env_json)  # export d'environnement Postman
 ```
-
-Une variable non résolue est **laissée telle quelle et signalée par un warning**
-(`unresolved-variable`, `unresolved-shell-variable`), jamais remplacée par du vide.
-Sans `options.variables`, les `$` des commandes curl ne sont pas touchés.
-Guide complet (contextes de quoting, priorités, codes de warning) :
-**[docs/variables.md](docs/variables.md)**.
-
-## Autres protocoles (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket)
-
-```ts
-import { run, registerDefaultNodeAdapters } from "urban-http";
-
-registerDefaultNodeAdapters(); // une fois, côté Node
-
-// Envoi d'un mail (nodemailer), téléversement FTP (basic-ftp), etc.
-const { result } = await run(
-  `curl smtp://mail.example.com --mail-from moi@x.com --mail-rcpt toi@y.com -T message.eml`
-);
-console.log(result.summary);
-```
-
-`run()` détecte le protocole et route : `fetch` pour HTTP, l'adaptateur sinon.
-Les bibliothèques sous-jacentes sont des **peer dependencies optionnelles**
-(installez seulement celles utilisées) ; POP3, TFTP et FILE n'en requièrent
-aucune. Sous-système compartimenté (`src/protocols/`), cœur HTTP inchangé.
-Détail : **[docs/protocols.md](docs/protocols.md)**.
 
 ## Collections Postman
 
-```ts
-import { parsePostman, isPostmanCollection } from "urban-http";
+```python
+from urban_http import parse_postman, is_postman_collection
 
-const { requests } = parsePostman(collectionJson, {
-  variables: { baseUrl: "https://staging.example.com" }, // valeurs d'environnement
-});
-requests[0].name; // le nom de la requête dans la collection
+result = parse_postman(collection_json, {"baseUrl": "https://api.example.com"})
+for req in result.requests:
+    print(req.name, req.method, req.url)
 ```
 
-Le format **Collection v2.0 / v2.1** est importé vers le même modèle : dossiers imbriqués,
-variables `{{...}}`, tous les modes de corps (raw, urlencoded, formdata, file, graphql),
-auth basic/bearer/apikey avec héritage collection → dossier → requête.
-Détail : **[docs/postman-collections.md](docs/postman-collections.md)**.
+Format Collection v2.0 / v2.1 : dossiers imbriqués, variables, tous les modes de
+corps (raw, urlencoded, formdata, file, graphql), auth basic/bearer/apikey avec
+héritage collection → dossier → requête.
 
-## Ce qui est pris en charge
+## Autres protocoles
 
-L'inventaire complet des cas d'usage curl et leur statut (✅ supporté, 🟡 partiel,
-⚪ ignoré, ❌ signalé) est dans **[docs/curl-use-cases.md](docs/curl-use-cases.md)**.
-curl sait aussi parler SMTP (mails), FTP, WebSocket, IMAP, MQTT… : le panorama
-complet de ces capacités et de leur traitement par le SDK (hors périmètre, mais
-détectées et signalées avec une alternative suggérée) est dans
-**[docs/curl-coverage.md](docs/curl-coverage.md)**.
+```python
+from urban_http import run, register_default_adapters
 
-En résumé : syntaxe shell complète (quotes, continuations bash `\` et cmd `^`, `$'...'`),
-méthodes, en-têtes, tous les `--data-*`, `--json`, `-G`, multipart `-F`, Basic/Bearer,
-**Digest** (négociation en deux requêtes, MD5/SHA-256), cookies inline **et fichiers de
-cookies Netscape**, **globbing d'URL** (`{a,b}`, `[1-10]`), redirections `-L`, timeout `-m`,
-retries `--retry`, URLs multiples et `--next`. Côté Node, `-x/--proxy` et `-k/--insecure`
-sont appliqués via [undici](https://www.npmjs.com/package/undici) (dépendance optionnelle :
-`npm install undici`).
+register_default_adapters()  # une fois
 
-## Site de démonstration
+# Envoi d'un mail (smtplib), téléversement FTP (ftplib), publication MQTT (paho)...
+result = run("curl smtp://mail.example.com --mail-from moi@x.com --mail-rcpt toi@y.com -T message.eml")
+print(result.protocol.summary)
+```
 
-`demo/index.html` est un playground : collez une commande curl, voyez la requête analysée,
-les warnings, le code fetch généré, et exécutez la requête depuis le navigateur
-(les exemples ciblent httpbin.org, qui autorise le CORS).
+`run()` détecte le protocole et route : HTTP via urllib, sinon l'adaptateur
+enregistré. Chaque adaptateur accepte un `client_factory` injectable (tests sans
+réseau, ou autre bibliothèque). Détail : **[docs/protocols.md](docs/protocols.md)**.
+
+## Ligne de commande
 
 ```bash
-npm run build          # compile le SDK et le bundle navigateur demo/urban-http.browser.js
-npx serve demo         # ou n'importe quel serveur statique
+urban-http "curl -X POST https://api.example.com -d a=1"     # analyse et affiche la requête
+urban-http "curl file:///etc/hostname" --run                 # analyse ET exécute
+urban-http "curl {{baseUrl}}/get" --var baseUrl=https://httpbin.org
 ```
+
+## Site de test
+
+```bash
+python demo/server.py          # http://127.0.0.1:8000
+```
+
+Une page web qui analyse en direct n'importe quelle commande curl ou collection
+Postman (analyse faite en Python côté serveur) et exécute les requêtes HTTP. Les
+exemples HTTP ciblent httpbin.org.
 
 ## Développement
 
 ```bash
-npm install
-npm test               # vitest : tokenizer, parser, exécution (fetch simulé)
-npm run build          # tsc -> dist/ + bundle navigateur
+python -m pytest               # 148 tests : tokenizer, parser, Postman, variables,
+                               # globbing, cookies, Digest, exécution, protocoles
 ```
+
+## Couverture de curl
+
+- **HTTP/HTTPS** : requête, corps, multipart, globbing, redirections, retries,
+  timeout, auth Basic/Bearer/Digest, cookies (inline et fichiers Netscape),
+  variables — plus l'import Postman. Détail : [docs/curl-use-cases.md](docs/curl-use-cases.md).
+- **Autres protocoles** : SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB,
+  WebSocket. Détail : [docs/protocols.md](docs/protocols.md).
+- **Panorama complet** (ce qui est couvert et ce qui ne l'est pas) :
+  [docs/curl-coverage.md](docs/curl-coverage.md).
 
 ## Feuille de route
 
 - Protocoles restants : IMAP, SCP, LDAP.
 - Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
-- Générateurs de code supplémentaires (axios, Python requests…).
+- Générateurs de code supplémentaires (httpx, requests).

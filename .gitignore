@@ -1,16 +1,27 @@
-# Dépendances
-node_modules/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# Sorties de build (le bundle de démo demo/urban-http.browser.js est versionné)
+# Distribution / packaging
+build/
 dist/
+*.egg-info/
+.eggs/
 
-# Couverture de tests
-coverage/
+# Environnements virtuels
+.venv/
+venv/
+env/
 
-# Journaux et caches
-*.log
-.npm/
-.vite/
+# Tests et couverture
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
 
 # Éditeurs / OS
 .DS_Store

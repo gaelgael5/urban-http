@@ -1,0 +1,5 @@
+"""Rend le paquet importable depuis src/ sans installation (pour les tests locaux)."""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))

@@ -1,18 +1,15 @@
 # Collections Postman — prise en charge
 
-`parsePostman()` importe le format **Postman Collection v2.0 / v2.1 (JSON)** et produit
-les mêmes `HttpRequestModel` que `parseCurl()` : tout l'aval (`toFetch`, `execute`,
-`toFetchCode`) fonctionne à l'identique.
+`parse_postman()` importe le format **Postman Collection v2.0 / v2.1 (JSON)** et
+produit les mêmes `HttpRequestModel` que `parse_curl()` : tout l'aval
+(`prepare_request`, `execute`) fonctionne à l'identique.
 
-```ts
-import { parsePostman, isPostmanCollection, execute } from "urban-http";
+```python
+from urban_http import parse_postman, is_postman_collection, execute
 
-const { requests, warnings } = parsePostman(collectionJson, {
-  variables: { baseUrl: "https://staging.example.com", token: "..." },
-});
-for (const req of requests) {
-  console.log(req.name, req.method, req.url);
-}
+result = parse_postman(collection_json, {"baseUrl": "https://staging.example.com"})
+for req in result.requests:
+    print(req.name, req.method, req.url)
 ```
 
 La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases.md).
@@ -22,7 +19,7 @@ La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases
 | Cas d'usage | Statut |
 |---|---|
 | Schéma Collection v2.0 et v2.1 | ✅ (autre schéma : warning, import au mieux) |
-| Dossiers imbriqués (`item` récursif) | ✅ (toutes les requêtes sont extraites, nom conservé dans `name`) |
+| Dossiers imbriqués (`item` récursif) | ✅ (nom conservé dans `req.name`) |
 | Forme courte `request: "https://..."` | ✅ |
 | JSON invalide ou non-collection | ❌ erreur propre (`invalid-json`, `not-a-collection`) |
 
@@ -31,30 +28,28 @@ La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases
 | Cas d'usage | Statut |
 |---|---|
 | URL chaîne ou objet (`raw`, ou composée de `protocol/host/port/path`) | ✅ |
-| Paramètres de query (`url.query`) | ✅ reconstruits depuis la liste |
-| Paramètres **désactivés** dans Postman | ✅ exclus de l'URL finale (comme dans Postman) |
+| Paramètres de query (`url.query`), désactivés exclus | ✅ |
 
 ## Variables
 
-Guide complet (mécanismes, priorités, codes de warning) : [variables.md](variables.md).
+Guide complet : [variables.md](variables.md).
 
 | Cas d'usage | Statut |
 |---|---|
-| Variables de collection (`variable`) | ✅ substituées dans URL, en-têtes, corps, auth |
-| Valeurs externes via `options.variables` | ✅ prioritaires sur la collection |
-| Export d'environnement Postman | ✅ via `parsePostmanEnvironment(json)` → à passer dans `options.variables` |
-| Variables dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ générées à chaque occurrence, comme Postman |
-| Autres dynamiques (`{{$randomCity}}`…) | ❌ warning `unsupported-dynamic-variable` |
-| Variable non résolue | 🟡 conservée telle quelle (`{{var}}`) + warning `unresolved-variable` |
+| Variables de collection (`variable`) | ✅ |
+| Valeurs externes via l'argument `variables` | ✅ prioritaires |
+| Export d'environnement Postman | ✅ via `parse_postman_environment(json)` |
+| Dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ |
+| Variable non résolue | 🟡 conservée + warning `unresolved-variable` |
 
 ## En-têtes et corps
 
 | Cas d'usage | Statut |
 |---|---|
 | En-têtes (liste, désactivés exclus ; forme texte brut acceptée) | ✅ |
-| `raw` + `options.raw.language` → Content-Type déduit (json, xml, html, text, javascript) | ✅ |
+| `raw` + `options.raw.language` → Content-Type déduit | ✅ |
 | `urlencoded` (paires encodées, désactivées exclues) | ✅ |
-| `formdata` (champs texte et fichiers, `contentType` par champ) | ✅ (fichiers résolus à l'exécution, comme pour curl `-F`) |
+| `formdata` (champs texte et fichiers, `contentType` par champ) | ✅ |
 | `file` (corps binaire) | ✅ |
 | `graphql` (query + variables → corps JSON) | ✅ |
 
@@ -64,18 +59,18 @@ Guide complet (mécanismes, priorités, codes de warning) : [variables.md](varia
 |---|---|
 | `basic` | ✅ `Authorization: Basic ...` |
 | `bearer` | ✅ `Authorization: Bearer ...` |
-| `apikey` (in: header ou query) | ✅ matérialisée en en-tête / paramètre |
+| `apikey` (in: header ou query) | ✅ |
 | `noauth` | ✅ |
-| Héritage collection → dossier → requête | ✅ (la plus proche l'emporte) |
-| `digest` | ✅ via `execute()` (négociation en deux requêtes, comme côté curl) |
+| Héritage collection → dossier → requête | ✅ |
+| `digest` | ✅ via `execute()` (négociation en deux requêtes) |
 | `ntlm` | ❌ warning |
-| `oauth1`, `oauth2`, `awsv4`, `hawk`... | ❌ warning `unsupported-auth` |
+| `oauth1`, `oauth2`, `awsv4`, `hawk`… | ❌ warning |
 
 ## Comportement réseau
 
 | Cas d'usage | Statut |
 |---|---|
-| Redirections suivies par défaut (comportement Postman, contraire à curl) | ✅ |
+| Redirections suivies par défaut (comportement Postman) | ✅ |
 | `protocolProfileBehavior.followRedirects: false` | ✅ |
-| Scripts pre-request / tests | ❌ jamais exécutés — warning `scripts-not-executed` si présents |
-| Fichiers d'exemples de réponse (`response`) | ⚪ ignorés |
+| Scripts pre-request / tests | ❌ jamais exécutés — warning `scripts-not-executed` |
+| Exemples de réponse (`response`) | ⚪ ignorés |

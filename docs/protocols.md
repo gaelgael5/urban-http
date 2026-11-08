@@ -1,69 +1,61 @@
 # Protocoles non-HTTP
 
-curl ne se limite pas à HTTP : il envoie des mails (SMTP), transfère des
-fichiers (FTP, SFTP, TFTP, SMB), lit des boîtes mail (POP3) et publie sur des
-courtiers MQTT. urban-http couvre ces protocoles via un **sous-système
-compartimenté** (`src/protocols/`) : le cœur HTTP n'en dépend pas, et chaque
-protocole est un **adaptateur optionnel** qui s'appuie sur une bibliothèque
-éprouvée, chargée seulement à la première exécution.
+curl ne se limite pas à HTTP : il envoie des mails (SMTP), transfère des fichiers
+(FTP, SFTP, TFTP, SMB), lit des boîtes mail (POP3) et publie sur des courtiers
+MQTT. urban-http couvre ces protocoles via un **sous-système compartimenté**
+(`urban_http/protocols/`) : le cœur HTTP n'en dépend pas, et chaque protocole est
+un **adaptateur** qui s'appuie sur la bibliothèque standard ou, à défaut, sur une
+bibliothèque tierce installée en **extra PyPI**.
 
 Protocoles couverts : **SMTP/SMTPS, FTP/FTPS, SFTP, POP3/POP3S, MQTT/MQTTS,
 TFTP, FILE, SMB/SMBS, WS/WSS (WebSocket)**.
 
-> **WebSocket est un cas à part** : il s'appuie sur l'API `WebSocket` standard,
-> native dans le navigateur **et** dans Node ≥ 22. C'est donc le seul protocole
-> non-HTTP qui s'exécute aussi côté navigateur, sans aucune dépendance. Le
-> playground l'exécute réellement.
-
-> Comme tout le SDK, une requête est **pilotée par la commande** que vous
-> écrivez : un adaptateur exécute une seule opération explicite (envoyer ce
-> mail, téléverser ce fichier, publier ce message), jamais de découverte ni
-> d'itération implicite.
+> Comme tout le SDK, une requête est **pilotée par la commande** que vous écrivez :
+> un adaptateur exécute une seule opération explicite (envoyer ce mail, téléverser
+> ce fichier, publier ce message), jamais de découverte ni d'itération implicite.
 
 ## Utilisation
 
-```ts
-import { run, registerDefaultNodeAdapters } from "urban-http";
+```python
+from urban_http import run, register_default_adapters
 
-registerDefaultNodeAdapters(); // une fois, au démarrage (Node)
+register_default_adapters()  # une fois, au démarrage
 
-// Envoi d'un mail
-const { result } = await run(
-  `curl smtp://mail.example.com --mail-from moi@example.com \
-     --mail-rcpt toi@example.com -T message.eml`
-);
-console.log(result.summary); // "250 message accepté"
+result = run(
+    "curl smtp://mail.example.com --mail-from moi@example.com "
+    "--mail-rcpt toi@example.com -T message.eml"
+)
+print(result.protocol.summary)   # "250 message accepté"
 ```
 
-`run(commande)` détecte le protocole et route : `fetch` pour HTTP, l'adaptateur
-enregistré sinon. Pour ne faire que l'analyse (sans exécuter) :
+`run(command)` détecte le protocole et route : HTTP via `urllib`, sinon
+l'adaptateur enregistré. Pour analyser sans exécuter :
 
-```ts
-import { parseCommand } from "urban-http";
+```python
+from urban_http import parse_command
 
-const parsed = parseCommand("curl ftp://bob@ftp.example.com/f.txt");
-// { kind: "protocol", scheme: "ftp", request: { host, port, path, direction, ... } }
+parsed = parse_command("curl ftp://bob@ftp.example.com/f.txt")
+# parsed.kind == "protocol" ; parsed.request.host / .port / .path / .direction
 ```
 
-## Installation des bibliothèques
-
-Les adaptateurs sont des **peer dependencies optionnelles** : installez seulement
-celles dont vous avez besoin.
+## Dépendances par protocole
 
 | Protocole | Bibliothèque | Install |
 |---|---|---|
-| SMTP / SMTPS | [nodemailer](https://www.npmjs.com/package/nodemailer) | `npm i nodemailer` |
-| FTP / FTPS | [basic-ftp](https://www.npmjs.com/package/basic-ftp) | `npm i basic-ftp` |
-| SFTP | [ssh2](https://www.npmjs.com/package/ssh2) | `npm i ssh2` |
-| MQTT / MQTTS | [mqtt](https://www.npmjs.com/package/mqtt) | `npm i mqtt` |
-| SMB / SMBS | [@marsaud/smb2](https://www.npmjs.com/package/@marsaud/smb2) | `npm i @marsaud/smb2` |
-| POP3 / POP3S | — (node:net / node:tls) | aucune |
-| TFTP | — (node:dgram) | aucune |
-| FILE | — (node:fs) | aucune |
-| WS / WSS | — (API WebSocket native) | aucune |
+| SMTP / SMTPS | `smtplib` (stdlib) | aucune |
+| FTP / FTPS | `ftplib` (stdlib) | aucune |
+| POP3 / POP3S | `poplib` (stdlib) | aucune |
+| TFTP | `socket` (stdlib) | aucune |
+| FILE | `open` (stdlib) | aucune |
+| SFTP | paramiko | `pip install "urban-http[sftp]"` |
+| MQTT / MQTTS | paho-mqtt | `pip install "urban-http[mqtt]"` |
+| SMB / SMBS | smbprotocol | `pip install "urban-http[smb]"` |
+| WS / WSS | websockets | `pip install "urban-http[websocket]"` |
 
-POP3, TFTP, FILE et WebSocket sont implémentés sans dépendance (modules natifs
-de Node, ou API WebSocket standard).
+Un adaptateur à extra n'importe sa bibliothèque **qu'au premier usage réel** ; tant
+que vous ne l'exécutez pas (ou que vous injectez un `client_factory`), l'extra
+n'est pas nécessaire. En son absence, l'adaptateur lève une erreur claire indiquant
+l'extra à installer.
 
 ## Correspondance commande → opération
 
@@ -78,68 +70,65 @@ de Node, ou API WebSocket standard).
 | `curl tftp://h/f` / `-T f tftp://h/f` | téléchargement / téléversement TFTP |
 | `curl file:///chemin` / `-T src file:///dest` | lecture / écriture d'un fichier local |
 | `curl smb://h/partage/f` / `-T f smb://h/partage/f` / `-l` | lecture / écriture / listage SMB |
-| `curl ws://h/chemin -d "msg"` / `ws://h/chemin` | WebSocket : envoi de message(s) puis lecture de la réponse / lecture du 1er message (sous-protocole via `-H "Sec-WebSocket-Protocol: ..."`) |
+| `curl ws://h/chemin -d "msg"` / `ws://h/chemin` | WebSocket : envoi puis lecture de la réponse / lecture du 1er message |
 
 Options communes reconnues : `-u user:pass` (ou `user:pass@hôte` dans l'URL),
-`-k/--insecure`, `--ssl`/`--ssl-reqd` (TLS opportuniste / requis), `-o fichier`
-(écrire le résultat), `-m`/`--connect-timeout`, `-r/--range` (FILE). Les
-variables `{{...}}` et `$VAR` fonctionnent comme pour HTTP.
+`-k/--insecure`, `--ssl`/`--ssl-reqd`, `-o fichier`, `-m`/`--connect-timeout`,
+`-r/--range` (FILE). Les variables `{{...}}` et `$VAR` fonctionnent comme pour HTTP.
 
 ## Résultat
 
-Chaque exécution renvoie un `ProtocolResult` normalisé :
+Chaque exécution renvoie un `ProtocolResult` :
 
-```ts
-interface ProtocolResult {
-  scheme: string;
-  ok: boolean;          // succès côté serveur
-  summary: string;      // résumé lisible
-  body?: Uint8Array;    // contenu récupéré (download, message, liste…)
-  meta: Record<string, unknown>; // taille, codes serveur, identifiants…
-  issues: string[];     // problèmes non bloquants
-}
+```python
+@dataclass
+class ProtocolResult:
+    scheme: str
+    ok: bool                 # succès côté serveur
+    summary: str             # résumé lisible
+    body: Optional[bytes]    # contenu récupéré (download, message, liste…)
+    meta: dict               # taille, codes serveur, identifiants…
+    issues: list[str]        # problèmes non bloquants
 ```
 
 ## Architecture — ajouter ou remplacer un adaptateur
 
-Le registre est ouvert : un adaptateur est un objet `{ name, schemes, execute }`.
+Le registre est ouvert : un adaptateur est un objet avec `name`, `schemes` et
+`execute(req, ctx)`.
 
-```ts
-import { registerProtocol } from "urban-http";
+```python
+from urban_http import register_protocol
 
-registerProtocol({
-  name: "mon-ftp",
-  schemes: ["ftp", "ftps"],
-  async execute(req, ctx) { /* ... */ return { scheme: req.scheme, ok: true, summary: "", meta: {}, issues: [] }; },
-});
+class MonFtp:
+    name = "mon-ftp"
+    schemes = ["ftp", "ftps"]
+    def execute(self, req, ctx):
+        ...
+        return ProtocolResult(scheme=req.scheme, ok=True, summary="", meta={}, issues=[])
+
+register_protocol(MonFtp())
 ```
 
-Chaque adaptateur de référence accepte aussi une **fabrique de client injectée**
-via `ctx.clientFactory`, ce qui permet de le tester sans réseau et de brancher
-une autre bibliothèque :
+Chaque adaptateur de référence accepte un **client injecté** via
+`ctx.client_factory`, ce qui permet de le tester sans réseau ou de brancher une
+autre bibliothèque :
 
-```ts
-await run("curl ftp://h/f.txt", {
-  clientFactory: () => monClientFtpSimulé, // au lieu de basic-ftp
-});
+```python
+from urban_http import run
+
+run("curl ftp://h/f.txt", client_factory=lambda: mon_client_ftp_simulé)
 ```
 
-## Côté navigateur
+## WebSocket
 
-Le **parsing** protocolaire (`parseCommand`, `parseProtocolCommand`) est pur
-texte et fonctionne dans le navigateur. Pour l'**exécution** :
-
-- **HTTP** s'exécute via `fetch` ;
-- **WebSocket** s'exécute aussi (API `WebSocket` native) — appelez
-  `registerBrowserAdapters()` puis `run("curl ws://...")` ;
-- les autres protocoles (sockets TCP/UDP) nécessitent Node.
-
-Le playground illustre les trois : il analyse n'importe quelle commande, et
-exécute celles en HTTP et en WebSocket.
+Contrairement à Node, Python n'a pas de client WebSocket dans la bibliothèque
+standard : l'adaptateur WebSocket utilise donc l'extra `websockets` (client
+synchrone). L'opération : ouvrir la connexion (sous-protocoles via
+`-H "Sec-WebSocket-Protocol: ..."`), envoyer chaque message `-d`, lire la première
+réponse, refermer.
 
 ## Hors périmètre
 
-Les protocoles sans adaptateur (IMAP, LDAP, DICT, GOPHER, RTSP, SCP…) restent
-signalés par le warning `unsupported-protocol`, comme décrit dans
-[curl-coverage.md](curl-coverage.md) — pour IMAP, une bibliothèque dédiée
-(imapflow) ; pour SCP, ssh2.
+Les protocoles sans adaptateur (IMAP, LDAP, DICT, GOPHER, RTSP, SCP, TELNET…)
+restent signalés par le warning `unsupported-protocol`. Pour IMAP, une bibliothèque
+dédiée (imapclient) ; pour SCP, paramiko.
