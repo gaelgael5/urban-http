@@ -43,6 +43,31 @@ Tout ce qui n'est pas reproductible (Digest, proxy, fichiers de cookies…) est 
 dans `warnings`** plutôt que silencieusement ignoré : chaque warning a un `code` stable,
 un `message` en français et un niveau (`info` | `warning` | `error`).
 
+## Variables
+
+Les deux parsers acceptent `options.variables` :
+
+```ts
+// Placeholders {{nom}} partout, et $NOM / ${NOM} comme dans le shell
+// (quotes doubles et arguments nus ; jamais dans les quotes simples)
+const { requests } = parseCurl(
+  `curl -H "Authorization: Bearer $TOKEN" {{baseUrl}}/users`,
+  { variables: { baseUrl: "https://api.example.com", TOKEN: "tok-42" } }
+);
+
+// Les dynamiques Postman sont générées automatiquement :
+// {{$guid}}, {{$randomUUID}}, {{$timestamp}}, {{$isoTimestamp}}, {{$randomInt}}
+parseCurl(`curl --json '{"id": "{{$guid}}"}' {{baseUrl}}/items`, { variables });
+
+// Un export d'environnement Postman se charge en une ligne
+import { parsePostmanEnvironment } from "urban-http";
+const variables = parsePostmanEnvironment(envJson);
+```
+
+Une variable non résolue est **laissée telle quelle et signalée par un warning**
+(`unresolved-variable`, `unresolved-shell-variable`), jamais remplacée par du vide.
+Sans `options.variables`, les `$` des commandes curl ne sont pas touchés.
+
 ## Collections Postman
 
 ```ts
@@ -93,6 +118,6 @@ npm run build          # tsc -> dist/ + bundle navigateur
 
 ## Feuille de route
 
-- Variables dynamiques Postman (`{{$guid}}`, `{{$timestamp}}`…).
 - Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
+- Davantage de variables dynamiques Postman (`{{$randomCity}}`, `{{$randomEmail}}`…).
 - Générateurs de code supplémentaires (axios, Python requests…).

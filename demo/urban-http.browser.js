@@ -26,6 +26,7 @@ var UrbanHttp = (() => {
     authHeader: () => authHeader,
     buildDigestAuthorization: () => buildDigestAuthorization,
     cookiesForUrl: () => cookiesForUrl,
+    createVariableContext: () => createVariableContext,
     execute: () => execute,
     expandCurlGlobs: () => expandCurlGlobs,
     isPostmanCollection: () => isPostmanCollection,
@@ -34,18 +35,38 @@ var UrbanHttp = (() => {
     parseDigestChallenge: () => parseDigestChallenge,
     parseNetscapeCookies: () => parseNetscapeCookies,
     parsePostman: () => parsePostman,
+    parsePostmanEnvironment: () => parsePostmanEnvironment,
+    substitutePlaceholders: () => substitutePlaceholders,
     toFetch: () => toFetch,
     toFetchCode: () => toFetchCode,
-    tokenize: () => tokenize
+    tokenize: () => tokenize,
+    tokenizeFull: () => tokenizeFull
   });
 
   // src/tokenize.ts
   function tokenize(input) {
+    return tokenizeFull(input).tokens;
+  }
+  function tokenizeFull(input, opts = {}) {
+    const shellVars = opts.shellVariables;
+    const unresolved = /* @__PURE__ */ new Set();
     const tokens = [];
     let current = "";
     let hasToken = false;
     let i = 0;
     const n = input.length;
+    const readShellVar = () => {
+      if (!shellVars) return void 0;
+      let m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(input.slice(i));
+      if (!m) m = /^\$([A-Za-z_][A-Za-z0-9_]*)/.exec(input.slice(i));
+      if (!m) return void 0;
+      const name = m[1];
+      if (Object.prototype.hasOwnProperty.call(shellVars, name)) {
+        return { text: shellVars[name], consumed: m[0].length };
+      }
+      unresolved.add(name);
+      return { text: m[0], consumed: m[0].length };
+    };
     const push = () => {
       if (hasToken) {
         tokens.push(current);
@@ -80,6 +101,14 @@ var UrbanHttp = (() => {
         i++;
         while (i < n) {
           const d = input[i];
+          if (d === "$") {
+            const sv = readShellVar();
+            if (sv) {
+              current += sv.text;
+              i += sv.consumed;
+              continue;
+            }
+          }
           if (d === '"') {
             if (input[i + 1] === '"' && isCmdStyle(input)) {
               current += '"';
@@ -105,6 +134,14 @@ var UrbanHttp = (() => {
           i++;
         }
         continue;
+      }
+      if (c === "$" && input[i + 1] !== "'") {
+        const sv = readShellVar();
+        if (sv) {
+          current += sv.text;
+          i += sv.consumed;
+          continue;
+        }
       }
       if (c === "$" && input[i + 1] === "'") {
         i += 2;
@@ -134,7 +171,10 @@ var UrbanHttp = (() => {
       i++;
     }
     push();
-    return stripPromptAndCurl(tokens);
+    return {
+      tokens: stripPromptAndCurl(tokens),
+      unresolvedShellVariables: [...unresolved]
+    };
   }
   function isCmdStyle(input) {
     return /\^\r?\n/.test(input);
@@ -266,6 +306,91 @@ var UrbanHttp = (() => {
       return out;
     }
     throw new GlobError(`plage invalide : [${spec}] (attendu [1-10], [01-10], [a-z], avec :pas optionnel)`);
+  }
+
+  // src/variables.ts
+  function createVariableContext(...sources) {
+    const values = /* @__PURE__ */ new Map();
+    for (const source of sources) {
+      if (!source) continue;
+      const entries = source instanceof Map ? source.entries() : Object.entries(source);
+      for (const [k, v] of entries) values.set(k, v);
+    }
+    return { values, unresolved: /* @__PURE__ */ new Set(), unsupportedDynamic: /* @__PURE__ */ new Set() };
+  }
+  function substitutePlaceholders(s, ctx) {
+    return s.replace(/\{\{([^{}]+)\}\}/g, (whole, name) => {
+      if (name.startsWith("$")) {
+        const generated = dynamicValue(name);
+        if (generated !== void 0) return generated;
+        ctx.unsupportedDynamic.add(name);
+        return whole;
+      }
+      if (ctx.values.has(name)) return ctx.values.get(name);
+      ctx.unresolved.add(name);
+      return whole;
+    });
+  }
+  function variableWarnings(ctx) {
+    const warnings = [];
+    for (const name of ctx.unresolved) {
+      warnings.push({
+        code: "unresolved-variable",
+        message: `Variable {{${name}}} non r\xE9solue : passez sa valeur via options.variables.`,
+        level: "warning"
+      });
+    }
+    for (const name of ctx.unsupportedDynamic) {
+      warnings.push({
+        code: "unsupported-dynamic-variable",
+        message: `Variable dynamique {{${name}}} non prise en charge (support\xE9es : $guid, $randomUUID, $timestamp, $isoTimestamp, $randomInt).`,
+        level: "warning"
+      });
+    }
+    return warnings;
+  }
+  function dynamicValue(name) {
+    switch (name) {
+      case "$guid":
+      case "$randomUUID":
+        return randomUUID();
+      case "$timestamp":
+        return String(Math.floor(Date.now() / 1e3));
+      case "$isoTimestamp":
+        return (/* @__PURE__ */ new Date()).toISOString();
+      case "$randomInt":
+        return String(Math.floor(Math.random() * 1001));
+      default:
+        return void 0;
+    }
+  }
+  function randomUUID() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) crypto.getRandomValues(bytes);
+    else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+    bytes[6] = bytes[6] & 15 | 64;
+    bytes[8] = bytes[8] & 63 | 128;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  function parsePostmanEnvironment(input) {
+    const obj = typeof input === "string" ? JSON.parse(input) : input;
+    const out = {};
+    if (!obj || typeof obj !== "object") return out;
+    if (Array.isArray(obj.values)) {
+      for (const v of obj.values) {
+        if (!v || v.key === void 0 || v.enabled === false) continue;
+        out[v.key] = v.value === void 0 || v.value === null ? "" : String(v.value);
+      }
+      return out;
+    }
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
   }
 
   // src/model.ts
@@ -642,8 +767,12 @@ var UrbanHttp = (() => {
       warn(st, "file-reference", `-b ${v} : fichier de cookies (format Netscape), lu au moment de l'ex\xE9cution (Node) ou via l'option readFile.`, "-b", "info");
     }
   }
-  function parseCurl(command) {
-    const tokens = tokenize(command);
+  function parseCurl(command, options = {}) {
+    const { tokens: rawTokens, unresolvedShellVariables } = tokenizeFull(command, {
+      shellVariables: options.variables
+    });
+    const varCtx = createVariableContext(options.variables);
+    const tokens = rawTokens.map((t) => substitutePlaceholders(t, varCtx));
     const groups = [[]];
     for (const t of tokens) {
       if (t === "--next" || t === "-:") {
@@ -670,6 +799,14 @@ var UrbanHttp = (() => {
         level: "error"
       });
     }
+    for (const name of unresolvedShellVariables) {
+      globalWarnings.push({
+        code: "unresolved-shell-variable",
+        message: `Variable shell $${name} non r\xE9solue : laiss\xE9e telle quelle.`,
+        level: "warning"
+      });
+    }
+    globalWarnings.push(...variableWarnings(varCtx));
     return { requests, warnings: globalWarnings };
   }
   function parseGroup(tokens) {
@@ -945,26 +1082,15 @@ var UrbanHttp = (() => {
         level: "warning"
       });
     }
-    const vars = /* @__PURE__ */ new Map();
+    const collectionVars = {};
     for (const v of collection.variable ?? []) {
-      if (v.key !== void 0 && !v.disabled) vars.set(v.key, v.value ?? "");
+      if (v.key !== void 0 && !v.disabled) collectionVars[v.key] = v.value ?? "";
     }
-    for (const [k, v] of Object.entries(opts.variables ?? {})) vars.set(k, v);
-    const unresolved = /* @__PURE__ */ new Set();
-    const substitute = (s) => s.replace(/\{\{([^{}]+)\}\}/g, (whole, name) => {
-      if (vars.has(name)) return vars.get(name);
-      unresolved.add(name);
-      return whole;
-    });
+    const varCtx = createVariableContext(collectionVars, opts.variables);
+    const substitute = (s) => substitutePlaceholders(s, varCtx);
     const requests = [];
     walkItems(collection.item, collection.auth, collection, substitute, requests);
-    for (const name of unresolved) {
-      globalWarnings.push({
-        code: "unresolved-variable",
-        message: `Variable {{${name}}} non r\xE9solue : passez sa valeur via options.variables.`,
-        level: "warning"
-      });
-    }
+    globalWarnings.push(...variableWarnings(varCtx));
     if (requests.length === 0) {
       globalWarnings.push({ code: "no-request", message: "La collection ne contient aucune requ\xEAte.", level: "error" });
     }

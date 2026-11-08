@@ -11,9 +11,13 @@
  * ```
  */
 export { parseCurl } from "./parse.js";
+export type { CurlParseOptions } from "./parse.js";
 export { parsePostman, isPostmanCollection } from "./postman.js";
 export type { PostmanParseOptions } from "./postman.js";
-export { tokenize } from "./tokenize.js";
+export { parsePostmanEnvironment, createVariableContext, substitutePlaceholders } from "./variables.js";
+export type { VariableContext } from "./variables.js";
+export { tokenize, tokenizeFull } from "./tokenize.js";
+export type { TokenizeOptions, TokenizeResult } from "./tokenize.js";
 export { toFetch, toFetchCode, authHeader } from "./to-fetch.js";
 export type { FetchPlan, ToFetchOptions } from "./to-fetch.js";
 export { execute } from "./execute.js";

@@ -8,13 +8,51 @@
  * - continuations de ligne : "\<newline>" (bash) et "^<newline>" (cmd Windows)
  * - quoting ANSI-C $'...' (\n, \t, \r, \\, \', \", \xHH, \uHHHH, \0, \NNN)
  * - les doubles quotes doublées "" du cmd Windows à l'intérieur de "..."
+ * - avec shellVariables : substitution de $VAR et ${VAR} là où bash le ferait
+ *   (à nu et dans les quotes doubles, jamais dans les quotes simples)
  */
+
+export interface TokenizeOptions {
+  /**
+   * Valeurs des variables shell $VAR / ${VAR}. Sans cette option, les $
+   * sont laissés tels quels (aucune substitution, aucun warning).
+   * La valeur n'est jamais re-découpée en mots, contrairement à bash.
+   */
+  shellVariables?: Record<string, string>;
+}
+
+export interface TokenizeResult {
+  tokens: string[];
+  /** Noms de variables shell rencontrés sans valeur (laissés tels quels). */
+  unresolvedShellVariables: string[];
+}
+
 export function tokenize(input: string): string[] {
+  return tokenizeFull(input).tokens;
+}
+
+export function tokenizeFull(input: string, opts: TokenizeOptions = {}): TokenizeResult {
+  const shellVars = opts.shellVariables;
+  const unresolved = new Set<string>();
   const tokens: string[] = [];
   let current = "";
   let hasToken = false;
   let i = 0;
   const n = input.length;
+
+  /** Lit $VAR ou ${VAR} à la position i ; renvoie le texte à insérer et la longueur consommée. */
+  const readShellVar = (): { text: string; consumed: number } | undefined => {
+    if (!shellVars) return undefined;
+    let m = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}/.exec(input.slice(i));
+    if (!m) m = /^\$([A-Za-z_][A-Za-z0-9_]*)/.exec(input.slice(i));
+    if (!m) return undefined;
+    const name = m[1]!;
+    if (Object.prototype.hasOwnProperty.call(shellVars, name)) {
+      return { text: shellVars[name]!, consumed: m[0].length };
+    }
+    unresolved.add(name);
+    return { text: m[0], consumed: m[0].length };
+  };
 
   const push = () => {
     if (hasToken) {
@@ -58,6 +96,14 @@ export function tokenize(input: string): string[] {
       i++;
       while (i < n) {
         const d = input[i]!;
+        if (d === "$") {
+          const sv = readShellVar();
+          if (sv) {
+            current += sv.text;
+            i += sv.consumed;
+            continue;
+          }
+        }
         if (d === '"') {
           // "" à l'intérieur d'une chaîne cmd Windows = une double quote littérale
           if (input[i + 1] === '"' && isCmdStyle(input)) {
@@ -84,6 +130,16 @@ export function tokenize(input: string): string[] {
         i++;
       }
       continue;
+    }
+
+    // Variable shell à nu : $VAR ou ${VAR}
+    if (c === "$" && input[i + 1] !== "'") {
+      const sv = readShellVar();
+      if (sv) {
+        current += sv.text;
+        i += sv.consumed;
+        continue;
+      }
     }
 
     // Quoting ANSI-C : $'...'
@@ -118,7 +174,10 @@ export function tokenize(input: string): string[] {
   }
   push();
 
-  return stripPromptAndCurl(tokens);
+  return {
+    tokens: stripPromptAndCurl(tokens),
+    unresolvedShellVariables: [...unresolved],
+  };
 }
 
 /** Heuristique : la commande vient de cmd Windows (continuations ^). */

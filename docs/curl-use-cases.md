@@ -143,6 +143,20 @@ et le statut de chacun dans le parser `urban-http`.
 Elles sont parsées sans erreur pour que n'importe quelle commande copiée d'un terminal
 ou d'un export Postman passe telle quelle.
 
+## 11. Variables
+
+Activées en passant `options.variables` à `parseCurl(commande, options)`.
+
+| Cas d'usage | Exemple | Statut |
+|---|---|---|
+| Placeholder Postman `{{nom}}` (URL, en-têtes, corps, partout) | `curl {{baseUrl}}/users` | ✅ |
+| Variable shell `$NOM` / `${NOM}`, à nu ou dans des quotes doubles | `curl -H "Authorization: Bearer $TOKEN" ...` | ✅ (uniquement si `options.variables` est fourni) |
+| `$NOM` dans des quotes simples : jamais substitué (comme bash) | `curl -d '$TOKEN' ...` | ✅ |
+| Valeur avec espaces : reste dans son token (pas de word-splitting bash) | — | ✅ (volontaire, plus sûr pour un SDK) |
+| Dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | `curl --json '{"id": "{{$guid}}"}' ...` | ✅ générées à chaque occurrence, comme Postman |
+| Autres dynamiques Postman (`{{$randomCity}}`…) | — | ❌ warning `unsupported-dynamic-variable`, laissées telles quelles |
+| Variable non résolue (`{{x}}` ou `$X` absent de la map) | — | 🟡 laissée telle quelle + warning (`unresolved-variable` / `unresolved-shell-variable`) |
+
 ---
 
 ## Et Postman ?

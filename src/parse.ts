@@ -2,8 +2,9 @@
  * Parser principal : transforme les tokens d'une commande curl
  * en un ou plusieurs HttpRequestModel.
  */
-import { tokenize } from "./tokenize.js";
+import { tokenizeFull } from "./tokenize.js";
 import { GlobError, expandCurlGlobs } from "./glob.js";
+import { createVariableContext, substitutePlaceholders, variableWarnings } from "./variables.js";
 import {
   AuthSpec,
   DataItem,
@@ -459,14 +460,29 @@ function handleCookie(st: ParseState, v: string) {
 /* Boucle principale                                                   */
 /* ------------------------------------------------------------------ */
 
+export interface CurlParseOptions {
+  /**
+   * Valeurs des variables : placeholders {{nom}} (syntaxe Postman) partout,
+   * et variables shell $VAR / ${VAR} là où bash les substituerait
+   * (à nu et dans les quotes doubles, jamais dans les quotes simples).
+   * Les dynamiques {{$guid}}, {{$timestamp}}, {{$isoTimestamp}}, {{$randomInt}}
+   * et {{$randomUUID}} sont générées automatiquement.
+   */
+  variables?: Record<string, string>;
+}
+
 /**
  * Parse une commande curl complète.
  *
  * @param command La commande telle que copiée depuis un terminal ou Postman
  *                (le mot "curl" initial est optionnel).
  */
-export function parseCurl(command: string): ParseResult {
-  const tokens = tokenize(command);
+export function parseCurl(command: string, options: CurlParseOptions = {}): ParseResult {
+  const { tokens: rawTokens, unresolvedShellVariables } = tokenizeFull(command, {
+    shellVariables: options.variables,
+  });
+  const varCtx = createVariableContext(options.variables);
+  const tokens = rawTokens.map((t) => substitutePlaceholders(t, varCtx));
 
   // --next sépare des requêtes indépendantes
   const groups: string[][] = [[]];
@@ -499,6 +515,15 @@ export function parseCurl(command: string): ParseResult {
       level: "error",
     });
   }
+
+  for (const name of unresolvedShellVariables) {
+    globalWarnings.push({
+      code: "unresolved-shell-variable",
+      message: `Variable shell $${name} non résolue : laissée telle quelle.`,
+      level: "warning",
+    });
+  }
+  globalWarnings.push(...variableWarnings(varCtx));
 
   return { requests, warnings: globalWarnings };
 }

@@ -146,7 +146,7 @@ nav.examples { position: sticky; top: 12px; max-height: calc(100dvh - 24px); ove
 .ex-group button .st { font-size: 0.75rem; margin-left: 6px; }
 
 /* --- Éditeur -------------------------------------------------------- */
-textarea#cmd {
+textarea#cmd, textarea#vars {
   width: 100%;
   min-height: 120px;
   resize: vertical;
@@ -159,7 +159,9 @@ textarea#cmd {
   line-height: 1.6;
   padding: 12px;
 }
-textarea#cmd:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+textarea#vars { min-height: 58px; }
+textarea#cmd:focus, textarea#vars:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.panel-h .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; align-items: center; }
 button.primary {
@@ -323,6 +325,14 @@ footer.site a { color: var(--accent); }
       </div>
     </section>
 
+    <section class="panel">
+      <div class="panel-h">Variables <span class="hint">une par ligne, clé=valeur — utilisables en {{clé}} partout et $clé comme dans le shell</span></div>
+      <div class="panel-b">
+        <textarea id="vars" spellcheck="false" aria-label="Variables, une par ligne au format clé=valeur">baseUrl=https://httpbin.org
+TOKEN=TOKEN_DEMO</textarea>
+      </div>
+    </section>
+
     <section class="panel" id="parse-panel">
       <div class="panel-h">
         Requête analysée
@@ -450,6 +460,13 @@ footer.site a { color: var(--accent); }
       { label: "Globbing {a,b} × [1-2]", cmd: `curl 'https://httpbin.org/anything/{alpha,beta}/[1-2]'` },
       { label: "Export Postman (cmd Windows)", cmd: `curl --location --request POST "https://httpbin.org/post" ^\n--header "Content-Type: application/json" ^\n--data-raw "{""ville"": ""Paris""}"` },
     ]},
+    { group: "Variables", items: [
+      { label: "{{baseUrl}} dans l'URL", cmd: `curl {{baseUrl}}/get` },
+      { label: "Variable shell $TOKEN", cmd: `curl -H "Authorization: Bearer $TOKEN" {{baseUrl}}/bearer` },
+      { label: "Jamais dans les quotes simples", cmd: `curl -d 'brut=$TOKEN' -d "interprete=$TOKEN" {{baseUrl}}/post` },
+      { label: "Dynamiques {{$guid}}…", cmd: `curl --json '{"id": "{{$guid}}", "ts": {{$timestamp}}, "cree": "{{$isoTimestamp}}"}' {{baseUrl}}/post` },
+      { label: "Variable manquante", cmd: `curl {{apiHost}}/users`, warn: true },
+    ]},
     { group: "Collection Postman", items: [
       { label: "Collection v2.1 (3 requêtes)", cmd: JSON.stringify(POSTMAN_SAMPLE, null, 2) },
       { label: "Variables non résolues", cmd: JSON.stringify(POSTMAN_UNRESOLVED, null, 2), warn: true },
@@ -499,8 +516,9 @@ footer.site a { color: var(--accent); }
     let result;
     try {
       const input = $("cmd").value;
+      const variables = currentVariables();
       // Un JSON collé = collection Postman ; sinon, commande curl
-      result = input.trim().startsWith("{") ? parsePostman(input) : parseCurl(input);
+      result = input.trim().startsWith("{") ? parsePostman(input, { variables }) : parseCurl(input, { variables });
     } catch (e) {
       currentResult = null;
       $("parsed").innerHTML = `<p style="color: var(--err)">Erreur du parser : ${esc(e.message)}</p>`;
@@ -646,11 +664,26 @@ footer.site a { color: var(--accent); }
   /* ----------------------------------------------------------------- */
   /* Branchements                                                       */
   /* ----------------------------------------------------------------- */
+  /** Lit le panneau Variables : une ligne "clé=valeur" par variable. */
+  function currentVariables() {
+    const out = {};
+    for (const line of $("vars").value.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1);
+    }
+    return out;
+  }
+
   let debounce;
-  $("cmd").addEventListener("input", () => {
+  const scheduleRun = () => {
     clearTimeout(debounce);
     debounce = setTimeout(run, 150);
-  });
+  };
+  $("cmd").addEventListener("input", scheduleRun);
+  $("vars").addEventListener("input", scheduleRun);
   $("btn-exec").addEventListener("click", executeCurrent);
   $("btn-copy").addEventListener("click", async () => {
     const text = $("fetch-code").textContent;

@@ -39,9 +39,11 @@ La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases
 | Cas d'usage | Statut |
 |---|---|
 | Variables de collection (`variable`) | ✅ substituées dans URL, en-têtes, corps, auth |
-| Valeurs externes via `options.variables` (environnement) | ✅ prioritaires sur la collection |
+| Valeurs externes via `options.variables` | ✅ prioritaires sur la collection |
+| Export d'environnement Postman | ✅ via `parsePostmanEnvironment(json)` → à passer dans `options.variables` |
+| Variables dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ générées à chaque occurrence, comme Postman |
+| Autres dynamiques (`{{$randomCity}}`…) | ❌ warning `unsupported-dynamic-variable` |
 | Variable non résolue | 🟡 conservée telle quelle (`{{var}}`) + warning `unresolved-variable` |
-| Variables dynamiques `{{$guid}}`, `{{$timestamp}}`... | ❌ non générées (traitées comme non résolues) |
 
 ## En-têtes et corps
 

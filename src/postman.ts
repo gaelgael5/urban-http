@@ -11,6 +11,7 @@ import {
   ParseWarning,
   defaultOptions,
 } from "./model.js";
+import { createVariableContext, substitutePlaceholders, variableWarnings } from "./variables.js";
 
 export interface PostmanParseOptions {
   /**
@@ -117,31 +118,19 @@ export function parsePostman(input: string | unknown, opts: PostmanParseOptions 
     });
   }
 
-  // Variables : collection d'abord, puis celles passées en option (prioritaires)
-  const vars = new Map<string, string>();
+  // Variables : collection d'abord, puis celles passées en option (prioritaires).
+  // Les dynamiques {{$guid}}, {{$timestamp}}... sont générées par le contexte.
+  const collectionVars: Record<string, string> = {};
   for (const v of collection.variable ?? []) {
-    if (v.key !== undefined && !v.disabled) vars.set(v.key, v.value ?? "");
+    if (v.key !== undefined && !v.disabled) collectionVars[v.key] = v.value ?? "";
   }
-  for (const [k, v] of Object.entries(opts.variables ?? {})) vars.set(k, v);
-
-  const unresolved = new Set<string>();
-  const substitute = (s: string): string =>
-    s.replace(/\{\{([^{}]+)\}\}/g, (whole, name: string) => {
-      if (vars.has(name)) return vars.get(name)!;
-      unresolved.add(name);
-      return whole;
-    });
+  const varCtx = createVariableContext(collectionVars, opts.variables);
+  const substitute = (s: string): string => substitutePlaceholders(s, varCtx);
 
   const requests: HttpRequestModel[] = [];
   walkItems(collection.item, collection.auth, collection, substitute, requests);
 
-  for (const name of unresolved) {
-    globalWarnings.push({
-      code: "unresolved-variable",
-      message: `Variable {{${name}}} non résolue : passez sa valeur via options.variables.`,
-      level: "warning",
-    });
-  }
+  globalWarnings.push(...variableWarnings(varCtx));
 
   if (requests.length === 0) {
     globalWarnings.push({ code: "no-request", message: "La collection ne contient aucune requête.", level: "error" });
