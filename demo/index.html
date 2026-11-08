@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>urban-http Playground</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout : colonne exemples à gauche, éditeur + résultats à droite ; pile unique au téléphone. */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --surface2: #e9edf2;
+  --border: #d4dae2;
+  --fg: #1d2630;
+  --muted: #5b6b7c;
+  --accent: #0e7c86;
+  --accent-contrast: #ffffff;
+  --ok: #2e7d32;
+  --warn: #9a6700;
+  --err: #c62828;
+  --info: #31608f;
+  --code-bg: #10161d;
+  --code-fg: #d8e2ec;
+  --m-get: #2e7d32;
+  --m-post: #b45309;
+  --m-put: #31608f;
+  --m-del: #c62828;
+  --m-other: #5b6b7c;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161c; --surface: #1a2029; --surface2: #222a35; --border: #313c4a;
+    --fg: #dbe4ee; --muted: #8fa0b3; --accent: #35b5c1; --accent-contrast: #0c1116;
+    --ok: #66bb6a; --warn: #e3b341; --err: #ef5350; --info: #7fb3e3;
+    --code-bg: #0c1116; --code-fg: #d8e2ec;
+    --m-get: #66bb6a; --m-post: #f0a44b; --m-put: #7fb3e3; --m-del: #ef5350; --m-other: #8fa0b3;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161c; --surface: #1a2029; --surface2: #222a35; --border: #313c4a;
+  --fg: #dbe4ee; --muted: #8fa0b3; --accent: #35b5c1; --accent-contrast: #0c1116;
+  --ok: #66bb6a; --warn: #e3b341; --err: #ef5350; --info: #7fb3e3;
+  --code-bg: #0c1116; --code-fg: #d8e2ec;
+  --m-get: #66bb6a; --m-post: #f0a44b; --m-put: #7fb3e3; --m-del: #ef5350; --m-other: #8fa0b3;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+
+header.site {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-block: 28px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 16px;
+}
+.brand {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+.brand .dollar { color: var(--accent); }
+.tagline { color: var(--muted); font-size: 0.95rem; }
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.panel + .panel { margin-top: 16px; }
+.panel-h {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.panel-b { padding: 14px; }
+
+/* --- Exemples ------------------------------------------------------ */
+nav.examples { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow-y: auto; }
+.ex-group { padding: 6px 0; }
+.ex-group + .ex-group { border-top: 1px solid var(--border); }
+.ex-group h3 {
+  margin: 6px 14px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.ex-group button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 6px 14px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.ex-group button:hover { background: var(--surface2); }
+.ex-group button.active { border-left-color: var(--accent); background: var(--surface2); }
+.ex-group button .st { font-size: 0.75rem; margin-left: 6px; }
+
+/* --- Éditeur -------------------------------------------------------- */
+textarea#cmd {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  padding: 12px;
+}
+textarea#cmd:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; align-items: center; }
+button.primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 18px;
+  cursor: pointer;
+}
+button.primary:hover { filter: brightness(1.08); }
+button.ghost {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 6px;
+  font: inherit;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+button.ghost:hover { background: var(--surface2); }
+.toolbar .note { color: var(--muted); font-size: 0.82rem; }
+
+/* --- Résultats ------------------------------------------------------- */
+.badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 2px 9px;
+  border-radius: 5px;
+  border: 1px solid currentColor;
+}
+.badge.GET { color: var(--m-get); }
+.badge.POST { color: var(--m-post); }
+.badge.PUT, .badge.PATCH { color: var(--m-put); }
+.badge.DELETE { color: var(--m-del); }
+.badge.HEAD, .badge.OPTIONS, .badge.other { color: var(--m-other); }
+
+.url-line {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  word-break: break-all;
+  margin: 8px 0 0;
+}
+
+table.kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  font-family: var(--font-mono);
+}
+table.kv th, table.kv td {
+  text-align: left;
+  padding: 5px 10px 5px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  word-break: break-all;
+}
+table.kv th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+table.kv tr:last-child th, table.kv tr:last-child td { border-bottom: none; }
+
+pre.code {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre;
+}
+.section-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+.section-label:first-child { margin-top: 0; }
+
+ul.warnings { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+ul.warnings li {
+  border-left: 3px solid var(--warn);
+  background: var(--surface2);
+  border-radius: 0 6px 6px 0;
+  padding: 7px 12px;
+  font-size: 0.86rem;
+}
+ul.warnings li.info { border-left-color: var(--info); }
+ul.warnings li.error { border-left-color: var(--err); }
+ul.warnings li code { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 11px;
+}
+
+.req-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.req-tabs button {
+  font: inherit; font-size: 0.8rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  padding: 4px 12px;
+  cursor: pointer;
+  color: var(--fg);
+}
+.req-tabs button.active { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+
+.status-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 0.9rem; }
+.status-line .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.muted { color: var(--muted); }
+.copy-ok { color: var(--ok); font-size: 0.8rem; }
+
+footer.site {
+  max-width: 1200px;
+  margin: 32px auto 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+footer.site a { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .panel { transition: border-color 0.15s ease; }
+}
+</style>
+
+<header class="site">
+  <div class="brand"><span class="dollar">$</span> urban-http</div>
+  <div class="tagline">Collez une commande curl, un export « Copy as cURL » ou une collection Postman v2.1 (JSON) — le SDK la transforme en appels HTTP exécutables.</div>
+</header>
+
+<div class="layout">
+
+  <nav class="examples panel" aria-label="Exemples">
+    <div class="panel-h">Exemples pris en charge</div>
+    <div id="example-groups"></div>
+  </nav>
+
+  <main>
+    <section class="panel">
+      <div class="panel-h">Commande curl ou collection Postman</div>
+      <div class="panel-b">
+        <textarea id="cmd" spellcheck="false" aria-label="Commande curl ou collection Postman à analyser">curl https://httpbin.org/get</textarea>
+        <div class="toolbar">
+          <button class="primary" id="btn-exec">Exécuter la requête</button>
+          <button class="ghost" id="btn-copy">Copier le code fetch</button>
+          <span class="copy-ok" id="copy-ok" hidden>Copié ✓</span>
+          <span class="note">L'exécution part de votre navigateur : le serveur cible doit autoriser le CORS (httpbin.org le fait).</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="parse-panel">
+      <div class="panel-h">
+        Requête analysée
+        <span class="req-tabs" id="req-tabs"></span>
+      </div>
+      <div class="panel-b" id="parsed"></div>
+    </section>
+
+    <section class="panel" id="warn-panel" hidden>
+      <div class="panel-h">Avertissements du parser</div>
+      <div class="panel-b"><ul class="warnings" id="warnings"></ul></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-h">Code fetch généré</div>
+      <div class="panel-b"><pre class="code" id="fetch-code"></pre></div>
+    </section>
+
+    <section class="panel" id="resp-panel" hidden>
+      <div class="panel-h">Réponse</div>
+      <div class="panel-b" id="response"></div>
+    </section>
+  </main>
+</div>
+
+<footer class="site">
+  SDK <strong>urban-http</strong> — parser curl → requête HTTP (fetch), sans dépendance.
+  La liste complète des options prises en charge est dans <code>docs/curl-use-cases.md</code> du dépôt.
+</footer>
+
+<script src="urban-http.browser.js"></script>
+<script>
+(function () {
+  "use strict";
+  const { parseCurl, parsePostman, toFetch, toFetchCode, execute } = window.UrbanHttp;
+
+  /* Collection Postman d'exemple (sérialisée dans les exemples ci-dessous) */
+  const POSTMAN_SAMPLE = {
+    info: { name: "Demo API", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    auth: { type: "bearer", bearer: [{ key: "token", value: "{{token}}" }] },
+    variable: [
+      { key: "baseUrl", value: "https://httpbin.org" },
+      { key: "token", value: "TOKEN_DEMO" },
+    ],
+    item: [
+      {
+        name: "Liste (GET + query)",
+        request: {
+          method: "GET",
+          url: {
+            raw: "{{baseUrl}}/get?limit=10",
+            query: [
+              { key: "limit", value: "10" },
+              { key: "debug", value: "1", disabled: true },
+            ],
+          },
+        },
+      },
+      {
+        name: "Création (POST JSON)",
+        request: {
+          method: "POST",
+          url: "{{baseUrl}}/post",
+          body: { mode: "raw", raw: '{"name": "clavier", "qty": 2}', options: { raw: { language: "json" } } },
+        },
+      },
+      {
+        name: "Upload (formdata)",
+        request: {
+          method: "POST",
+          url: "{{baseUrl}}/post",
+          body: { mode: "formdata", formdata: [
+            { key: "name", value: "jean", type: "text" },
+            { key: "file", src: "photo.png", type: "file", contentType: "image/png" },
+          ]},
+        },
+      },
+    ],
+  };
+
+  const POSTMAN_UNRESOLVED = {
+    info: { name: "Variables manquantes", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    item: [{ name: "GET avec variable", request: "{{baseUrl}}/users/{{userId}}" }],
+  };
+
+  /* ----------------------------------------------------------------- */
+  /* Exemples                                                           */
+  /* ----------------------------------------------------------------- */
+  const EXAMPLES = [
+    { group: "Basiques", items: [
+      { label: "GET simple", cmd: `curl https://httpbin.org/get` },
+      { label: "Méthode explicite (-X)", cmd: `curl -X DELETE https://httpbin.org/delete` },
+      { label: "HEAD (-I)", cmd: `curl -I https://httpbin.org/get` },
+      { label: "Multi-lignes bash (\\)", cmd: `curl -X POST \\\n  -H 'Accept: application/json' \\\n  https://httpbin.org/post` },
+      { label: "Options groupées (-sSL)", cmd: `curl -sSL https://httpbin.org/redirect/2` },
+    ]},
+    { group: "En-têtes", items: [
+      { label: "En-têtes multiples (-H)", cmd: `curl -H 'Accept: application/json' -H 'X-Trace-Id: abc-123' https://httpbin.org/headers` },
+      { label: "User-Agent et Referer", cmd: `curl -A 'UrbanHttp/1.0' -e 'https://referer.example' https://httpbin.org/headers` },
+      { label: "Compression (--compressed)", cmd: `curl --compressed https://httpbin.org/gzip` },
+      { label: "Supprimer un en-tête", cmd: `curl -A 'SeraSupprime' -H 'User-Agent:' https://httpbin.org/headers` },
+      { label: "Range (-r)", cmd: `curl -r 0-127 https://httpbin.org/range/1024` },
+    ]},
+    { group: "Corps de requête", items: [
+      { label: "POST formulaire (-d)", cmd: `curl -d 'name=jean' -d 'age=30' https://httpbin.org/post` },
+      { label: "POST JSON (-d + -H)", cmd: `curl -X POST https://httpbin.org/post \\\n  -H 'Content-Type: application/json' \\\n  -d '{"produit": "clavier", "qty": 2}'` },
+      { label: "Raccourci --json", cmd: `curl --json '{"tool": "urban-http"}' https://httpbin.org/post` },
+      { label: "--data-urlencode", cmd: `curl --data-urlencode 'q=crème brûlée & co' https://httpbin.org/post` },
+      { label: "Query string via -G", cmd: `curl -G -d 'q=paris' --data-urlencode 'quartier=le marais' https://httpbin.org/get` },
+      { label: "Multipart (-F)", cmd: `curl -F 'name=jean' -F 'avatar=@photo.png;type=image/png' https://httpbin.org/post` },
+      { label: "Corps depuis un fichier", cmd: `curl -d @payload.json https://httpbin.org/post` },
+    ]},
+    { group: "Auth et cookies", items: [
+      { label: "Basic (-u)", cmd: `curl -u alice:secret https://httpbin.org/basic-auth/alice/secret` },
+      { label: "Bearer (--oauth2-bearer)", cmd: `curl --oauth2-bearer TOKEN_123 https://httpbin.org/bearer` },
+      { label: "Digest (2 requêtes)", cmd: `curl --digest -u alice:secret https://httpbin.org/digest-auth/auth/alice/secret` },
+      { label: "Cookies (-b)", cmd: `curl -b 'session=abc123' -b 'theme=dark' https://httpbin.org/cookies` },
+      { label: "Fichier de cookies (-b)", cmd: `curl -b cookies.txt https://httpbin.org/cookies` },
+    ]},
+    { group: "Transfert", items: [
+      { label: "Redirections + timeout + retry", cmd: `curl -L --max-redirs 5 -m 10 --retry 3 https://httpbin.org/redirect/1` },
+      { label: "Deux URLs, même config", cmd: `curl -H 'X-Batch: 1' https://httpbin.org/get https://httpbin.org/uuid` },
+      { label: "--next : requêtes enchaînées", cmd: `curl -d 'a=1' https://httpbin.org/post --next -I https://httpbin.org/get` },
+      { label: "Globbing [1-3] → 3 requêtes", cmd: `curl 'https://httpbin.org/anything/[1-3]'` },
+      { label: "Globbing {a,b} × [1-2]", cmd: `curl 'https://httpbin.org/anything/{alpha,beta}/[1-2]'` },
+      { label: "Export Postman (cmd Windows)", cmd: `curl --location --request POST "https://httpbin.org/post" ^\n--header "Content-Type: application/json" ^\n--data-raw "{""ville"": ""Paris""}"` },
+    ]},
+    { group: "Collection Postman", items: [
+      { label: "Collection v2.1 (3 requêtes)", cmd: JSON.stringify(POSTMAN_SAMPLE, null, 2) },
+      { label: "Variables non résolues", cmd: JSON.stringify(POSTMAN_UNRESOLVED, null, 2), warn: true },
+    ]},
+    { group: "Limites signalées", items: [
+      { label: "Certificat client (--cert)", cmd: `curl --cert client.pem --key client.key https://httpbin.org/get`, warn: true },
+      { label: "NTLM (--ntlm)", cmd: `curl --ntlm -u 'dom\\user:pass' https://httpbin.org/get`, warn: true },
+      { label: "Proxy (Node seulement)", cmd: `curl -x http://proxy.local:8080 https://httpbin.org/get`, warn: true },
+      { label: "Globbing hors limite", cmd: `curl 'https://httpbin.org/anything/[1-100000]'`, warn: true },
+    ]},
+  ];
+
+  /* ----------------------------------------------------------------- */
+  /* Rendu                                                              */
+  /* ----------------------------------------------------------------- */
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  let currentResult = null;
+  let currentIndex = 0;
+
+  function methodClass(m) {
+    return ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].includes(m) ? m : "other";
+  }
+
+  function renderExamples() {
+    const root = $("example-groups");
+    root.innerHTML = EXAMPLES.map((g, gi) => `
+      <div class="ex-group">
+        <h3>${esc(g.group)}</h3>
+        ${g.items.map((it, ii) => `
+          <button data-g="${gi}" data-i="${ii}">${esc(it.label)}${it.warn ? '<span class="st">⚠️</span>' : ""}</button>
+        `).join("")}
+      </div>`).join("");
+    root.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-g]");
+      if (!btn) return;
+      root.querySelectorAll("button.active").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      $("cmd").value = EXAMPLES[+btn.dataset.g].items[+btn.dataset.i].cmd;
+      run();
+    });
+  }
+
+  function run() {
+    $("resp-panel").hidden = true;
+    let result;
+    try {
+      const input = $("cmd").value;
+      // Un JSON collé = collection Postman ; sinon, commande curl
+      result = input.trim().startsWith("{") ? parsePostman(input) : parseCurl(input);
+    } catch (e) {
+      currentResult = null;
+      $("parsed").innerHTML = `<p style="color: var(--err)">Erreur du parser : ${esc(e.message)}</p>`;
+      $("fetch-code").textContent = "";
+      $("warn-panel").hidden = true;
+      renderTabs();
+      return;
+    }
+    currentResult = result;
+    currentIndex = Math.min(currentIndex, Math.max(0, result.requests.length - 1));
+    renderTabs();
+    renderParsed();
+  }
+
+  function renderTabs() {
+    const tabs = $("req-tabs");
+    const n = currentResult ? currentResult.requests.length : 0;
+    if (n <= 1) { tabs.innerHTML = ""; return; }
+    tabs.innerHTML = currentResult.requests
+      .map((r, i) => `<button data-t="${i}" class="${i === currentIndex ? "active" : ""}">${esc(r.name || "Requête " + (i + 1))}</button>`)
+      .join("");
+  }
+
+  $("req-tabs").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-t]");
+    if (!btn) return;
+    currentIndex = +btn.dataset.t;
+    renderTabs();
+    renderParsed();
+  });
+
+  function renderParsed() {
+    const container = $("parsed");
+    if (!currentResult || currentResult.requests.length === 0) {
+      const msgs = (currentResult ? currentResult.warnings : []).map((w) => `<li class="${esc(w.level)}">${esc(w.message)}</li>`).join("");
+      container.innerHTML = `<p class="muted">Aucune requête détectée.</p>` + (msgs ? `<ul class="warnings">${msgs}</ul>` : "");
+      $("fetch-code").textContent = "";
+      $("warn-panel").hidden = true;
+      return;
+    }
+    const req = currentResult.requests[currentIndex];
+
+    let html = `
+      ${req.name ? `<p class="section-label" style="margin-top:0">${esc(req.name)}</p>` : ""}
+      <span class="badge ${methodClass(req.method)}">${esc(req.method)}</span>
+      <p class="url-line">${esc(req.url)}</p>`;
+
+    if (req.headers.length > 0) {
+      html += `<p class="section-label">En-têtes</p>
+        <table class="kv">${req.headers.map(([n, v]) => `<tr><th>${esc(n)}</th><td>${esc(v)}</td></tr>`).join("")}</table>`;
+    }
+
+    if (req.auth) {
+      html += `<p class="section-label">Authentification</p>
+        <table class="kv"><tr><th>${esc(req.auth.kind)}</th><td>${esc(req.auth.username ? req.auth.username + " : ••••••" : (req.auth.token ? "token ••••••" : ""))}</td></tr></table>`;
+    }
+
+    if (req.body) {
+      html += `<p class="section-label">Corps (${esc(req.body.kind)})</p>`;
+      if (req.body.kind === "multipart") {
+        html += `<table class="kv">${(req.body.parts || []).map((p) => {
+          const val = p.filePath ? `@${p.filePath}` + (p.contentType ? ` (${p.contentType})` : "") + (p.fileName ? ` → ${p.fileName}` : "")
+            : p.contentFromFile ? `&lt;${esc(p.contentFromFile)}` : esc(p.value ?? "");
+          return `<tr><th>${esc(p.name)}</th><td>${p.filePath ? esc(val) : val}</td></tr>`;
+        }).join("")}</table>`;
+      } else if (req.body.kind === "file") {
+        html += `<pre class="code">@${esc(req.body.filePath || "")}</pre>`;
+      } else {
+        html += `<pre class="code">${esc(req.body.text ?? "")}</pre>`;
+      }
+    }
+
+    const opts = [];
+    if (req.options.followRedirects) opts.push("suit les redirections");
+    if (req.options.maxRedirs !== undefined) opts.push(`max-redirs: ${req.options.maxRedirs}`);
+    if (req.options.timeoutMs) opts.push(`timeout: ${req.options.timeoutMs} ms`);
+    if (req.options.retry) opts.push(`retry: ${req.options.retry}`);
+    if (req.options.retryDelayMs) opts.push(`retry-delay: ${req.options.retryDelayMs} ms`);
+    if (req.options.insecure) opts.push("insecure (-k)");
+    if (req.options.compressed) opts.push("compressed");
+    if (req.options.proxy) opts.push(`proxy: ${req.options.proxy}`);
+    if (opts.length > 0) {
+      html += `<p class="section-label">Options de transfert</p>
+        <div class="chips">${opts.map((o) => `<span class="chip">${esc(o)}</span>`).join("")}</div>`;
+    }
+
+    container.innerHTML = html;
+    $("fetch-code").textContent = toFetchCode(req);
+
+    const allWarnings = [...currentResult.warnings, ...req.warnings];
+    $("warn-panel").hidden = allWarnings.length === 0;
+    $("warnings").innerHTML = allWarnings
+      .map((w) => `<li class="${esc(w.level)}">${w.option ? `<code>${esc(w.option)}</code> — ` : ""}${esc(w.message)}</li>`)
+      .join("");
+  }
+
+  /* ----------------------------------------------------------------- */
+  /* Exécution réelle                                                   */
+  /* ----------------------------------------------------------------- */
+  async function executeCurrent() {
+    if (!currentResult || currentResult.requests.length === 0) return;
+    const req = currentResult.requests[currentIndex];
+    const panel = $("resp-panel");
+    const out = $("response");
+    panel.hidden = false;
+    out.innerHTML = `<p class="muted">Requête en cours…</p>`;
+    const started = performance.now();
+    try {
+      const result = await execute(req);
+      const ms = Math.round(performance.now() - started);
+      const res = result.response;
+      let bodyText = "";
+      try { bodyText = await res.text(); } catch { bodyText = "(corps illisible)"; }
+      if (bodyText.length > 50_000) bodyText = bodyText.slice(0, 50_000) + "\n… (tronqué)";
+
+      const headerRows = [];
+      res.headers.forEach((v, n) => headerRows.push(`<tr><th>${esc(n)}</th><td>${esc(v)}</td></tr>`));
+
+      const color = res.status === 0 ? "var(--muted)" : res.ok ? "var(--ok)" : res.status >= 500 ? "var(--err)" : "var(--warn)";
+      const statusLabel = res.status === 0
+        ? "réponse opaque (redirection non suivie ou bloquée)"
+        : `${res.status} ${res.statusText || ""}`;
+
+      out.innerHTML = `
+        <div class="status-line">
+          <span class="dot" style="background:${color}"></span>
+          <strong>${esc(statusLabel)}</strong>
+          <span class="muted">${ms} ms · ${result.attempts} tentative${result.attempts > 1 ? "s" : ""}</span>
+        </div>
+        ${result.issues.length ? `<ul class="warnings" style="margin-top:10px">${result.issues.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}
+        ${headerRows.length ? `<p class="section-label">En-têtes de réponse</p><table class="kv">${headerRows.join("")}</table>` : ""}
+        <p class="section-label">Corps de réponse</p>
+        <pre class="code">${esc(bodyText || "(vide)")}</pre>`;
+    } catch (e) {
+      out.innerHTML = `
+        <div class="status-line"><span class="dot" style="background:var(--err)"></span><strong>Échec</strong></div>
+        <p>${esc(e.message)}</p>
+        <p class="muted">Cause fréquente dans un navigateur : le serveur cible n'autorise pas le CORS, ou la requête a dépassé le timeout.
+        Les exemples ciblent httpbin.org, qui autorise le CORS.</p>`;
+    }
+  }
+
+  /* ----------------------------------------------------------------- */
+  /* Branchements                                                       */
+  /* ----------------------------------------------------------------- */
+  let debounce;
+  $("cmd").addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(run, 150);
+  });
+  $("btn-exec").addEventListener("click", executeCurrent);
+  $("btn-copy").addEventListener("click", async () => {
+    const text = $("fetch-code").textContent;
+    const ok = $("copy-ok");
+    try {
+      await navigator.clipboard.writeText(text);
+      ok.hidden = false;
+      setTimeout(() => { ok.hidden = true; }, 1600);
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents($("fetch-code"));
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
+  renderExamples();
+  run();
+})();
+</script>
+</body>
+</html>
