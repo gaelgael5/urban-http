@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "urban-http"
+version = "0.1.0"
+description = "Transformer une commande curl ou une collection Postman en appel exécutable (HTTP et autres protocoles)."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = ["curl", "http", "parser", "postman", "sdk"]
+authors = [{ name = "urban-http" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Internet :: WWW/HTTP",
+]
+# Le cœur (parsing + HTTP + SMTP/FTP/POP3/TFTP/FILE/WebSocket) n'utilise que
+# la bibliothèque standard : aucune dépendance obligatoire.
+dependencies = []
+
+[project.optional-dependencies]
+# Chaque protocole qui requiert une bibliothèque tierce est un extra PyPI.
+# Exemple : pip install "urban-http[sftp,mqtt]"
+sftp = ["paramiko>=3"]
+# SCP partage paramiko avec SFTP. IMAP, lui, n'a besoin d'aucune dépendance (imaplib).
+scp = ["paramiko>=3"]
+mqtt = ["paho-mqtt>=2"]
+smb = ["smbprotocol>=1.12"]
+# WebSocket côté client : websockets couvre tous les Python >= 3.9.
+websocket = ["websockets>=12"]
+# Lecture des contrats OpenAPI au format YAML (le JSON ne nécessite rien).
+openapi = ["pyyaml>=6"]
+# Serveur du site de test.
+web = ["flask>=3"]
+all = [
+  "paramiko>=3",
+  "paho-mqtt>=2",
+  "smbprotocol>=1.12",
+  "websockets>=12",
+  "flask>=3",
+]
+dev = ["pytest>=8"]
+
+[project.scripts]
+urban-http = "urban_http.cli:main"
+
+[project.urls]
+Repository = "https://github.com/gaelgael5/urban-http"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/urban_http"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
