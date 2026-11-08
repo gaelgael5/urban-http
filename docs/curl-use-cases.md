@@ -1,7 +1,9 @@
 # Cas d'usage curl — inventaire et prise en charge
 
-Ce document liste les cas d'usage de curl pertinents pour un appel HTTP applicatif,
+Ce document liste les cas d'usage de curl pertinents pour un **appel HTTP applicatif**,
 et le statut de chacun dans le parser `urban-http`.
+Pour le panorama complet de curl (protocoles non-HTTP : mails SMTP, FTP, WebSocket…),
+voir **[curl-coverage.md](curl-coverage.md)**.
 
 **Légende des statuts :**
 
@@ -75,6 +77,7 @@ et le statut de chacun dans le parser `urban-http`.
 | Données binaires | `--data-binary` | ✅ |
 | Encodage URL de la valeur (`contenu`, `=contenu`, `nom=contenu`) | `--data-urlencode` | ✅ |
 | Raccourci JSON (body + `Content-Type` + `Accept`) | `--json '{"a":1}'` | ✅ |
+| Paramètres de query encodés, indépendants du corps | `--url-query 'q=crème brûlée'` (formes de `--data-urlencode` + `+brut`) | ✅ |
 | Corps depuis un fichier | `-d @fichier` | ✅ Node (CR/LF supprimés comme curl) / 🟡 navigateur via `readFile` injectable |
 | Upload de fichier brut (PUT) | `-T, --upload-file` | ✅ Node / 🟡 navigateur |
 | Formulaire multipart | `-F, --form` | ✅ (`FormData`, boundary géré par fetch) |
@@ -155,6 +158,7 @@ Guide complet : [variables.md](variables.md).
 | `$NOM` dans des quotes simples : jamais substitué (comme bash) | `curl -d '$TOKEN' ...` | ✅ |
 | Valeur avec espaces : reste dans son token (pas de word-splitting bash) | — | ✅ (volontaire, plus sûr pour un SDK) |
 | Dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | `curl --json '{"id": "{{$guid}}"}' ...` | ✅ générées à chaque occurrence, comme Postman |
+| Variables natives curl 8.3+ | `--variable host=api.e.com --expand-url 'https://{{host}}/x'`, `--variable %NOM[=défaut]` | ✅ (substitution globale, superset des `--expand-*` de curl) |
 | Autres dynamiques Postman (`{{$randomCity}}`…) | — | ❌ warning `unsupported-dynamic-variable`, laissées telles quelles |
 | Variable non résolue (`{{x}}` ou `$X` absent de la map) | — | 🟡 laissée telle quelle + warning (`unresolved-variable` / `unresolved-shell-variable`) |
 

@@ -24,6 +24,7 @@ interface ParseState {
   headers: Array<[string, string]>;
   removedHeaders: string[]; // -H "Name:" (suppression)
   dataItems: DataItem[];
+  urlQuery: string[];
   formFields: FormField[];
   formIsMultipart: boolean;
   uploadFile?: string; // -T
@@ -48,6 +49,7 @@ function newState(): ParseState {
     headers: [],
     removedHeaders: [],
     dataItems: [],
+    urlQuery: [],
     formFields: [],
     formIsMultipart: false,
     cookies: [],
@@ -85,6 +87,15 @@ const LONG_OPTIONS: Record<string, OptDef> = {
   "request": { takesValue: true, handler: (st, v) => (st.explicitMethod = v.toUpperCase()) },
   "head": { takesValue: false, handler: (st) => (st.headMethod = true) },
   "get": { takesValue: false, handler: (st) => (st.get = true) },
+  "url-query": { takesValue: true, handler: handleUrlQuery },
+
+  // --- Variables curl 8.3+ ----------------------------------------------
+  // --variable est consommée avant le parsing (voir parseCurl) ;
+  // les --expand-* sont des alias, la substitution {{...}} étant déjà globale.
+  "variable": { takesValue: true, handler: noop },
+  "expand-url": { takesValue: true, handler: (st, v) => st.urls.push(v) },
+  "expand-data": { takesValue: true, handler: (st, v) => pushData(st, "data", v) },
+  "expand-header": { takesValue: true, handler: handleHeader },
 
   // --- En-têtes ---------------------------------------------------------
   "header": { takesValue: true, handler: handleHeader },
@@ -239,6 +250,44 @@ const LONG_OPTIONS: Record<string, OptDef> = {
   "fail-with-body": { takesValue: false, handler: noop },
   "styled-output": { takesValue: false, handler: noop },
 
+  // --- Autres protocoles curl (hors périmètre HTTP, signalés) --------------------
+  "mail-from": protocolOption("--mail-from", "SMTP (envoi de mail)", true),
+  "mail-rcpt": protocolOption("--mail-rcpt", "SMTP (envoi de mail)", true),
+  "mail-auth": protocolOption("--mail-auth", "SMTP (envoi de mail)", true),
+  "quote": protocolOption("-Q/--quote", "FTP/SFTP (commandes serveur)", true),
+  "ftp-port": protocolOption("-P/--ftp-port", "FTP (mode actif)", true),
+  "ftp-create-dirs": protocolOption("--ftp-create-dirs", "FTP", false),
+  "ftp-method": protocolOption("--ftp-method", "FTP", true),
+  "ftp-pasv": protocolOption("--ftp-pasv", "FTP", false),
+  "list-only": protocolOption("-l/--list-only", "FTP/IMAP/POP3 (listage)", false),
+  "telnet-option": protocolOption("-t/--telnet-option", "TELNET", true),
+  "tftp-blksize": protocolOption("--tftp-blksize", "TFTP", true),
+  "ssl": protocolOption("--ssl", "upgrade TLS des protocoles non-HTTP (FTP, SMTP, IMAP, POP3)", false),
+  "ssl-reqd": protocolOption("--ssl-reqd", "upgrade TLS des protocoles non-HTTP (FTP, SMTP, IMAP, POP3)", false),
+  "crlf": protocolOption("--crlf", "conversion de fins de ligne (FTP/SMTP)", false),
+
+  // --- Reconnues mais non applicables (signalées explicitement) -----------------
+  "netrc": { takesValue: false, handler: unsupported("-n/--netrc", "identifiants depuis ~/.netrc") },
+  "netrc-file": { takesValue: true, handler: unsupported("--netrc-file", "identifiants depuis un fichier netrc") },
+  "netrc-optional": { takesValue: false, handler: unsupported("--netrc-optional", "identifiants depuis ~/.netrc") },
+  "time-cond": { takesValue: true, handler: unsupported("-z/--time-cond", "requête conditionnelle If-Modified-Since") },
+  "etag-compare": { takesValue: true, handler: unsupported("--etag-compare", "requête conditionnelle If-None-Match") },
+  "etag-save": { takesValue: true, handler: noopInfo("--etag-save") },
+  "continue-at": { takesValue: true, handler: unsupported("-C/--continue-at", "reprise de transfert") },
+  "socks4": { takesValue: true, handler: unsupported("--socks4", "proxy SOCKS") },
+  "socks4a": { takesValue: true, handler: unsupported("--socks4a", "proxy SOCKS") },
+  "socks5": { takesValue: true, handler: unsupported("--socks5", "proxy SOCKS") },
+  "socks5-hostname": { takesValue: true, handler: unsupported("--socks5-hostname", "proxy SOCKS") },
+
+  // --- Parallélisme : les requêtes sont renvoyées, l'application orchestre ------
+  "parallel": {
+    takesValue: false,
+    handler: (st) =>
+      warn(st, "cli-only-option", "-Z/--parallel : le SDK renvoie toutes les requêtes, l'exécution en parallèle (Promise.all) revient à l'application.", "-Z", "info"),
+  },
+  "parallel-max": { takesValue: true, handler: noop },
+  "parallel-immediate": { takesValue: false, handler: noop },
+
   // --- Divers -------------------------------------------------------------------
   "globoff": { takesValue: false, handler: (st) => (st.globoff = true) },
   "config": { takesValue: true, handler: unsupported("--config", "fichier de configuration curl") },
@@ -290,11 +339,26 @@ const SHORT_OPTIONS: Record<string, string> = {
   "E": "cert",
   "U": "proxy-user",
   "Z": "parallel",
+  "Q": "quote",
+  "P": "ftp-port",
+  "l": "list-only",
+  "t": "telnet-option",
+  "n": "netrc",
+  "z": "time-cond",
+  "C": "continue-at",
 };
 
 function unsupported(option: string, label: string): Handler {
   return (st) =>
     warn(st, "unsupported-option", `${option} (${label}) : non pris en charge par le SDK, option ignorée.`, option);
+}
+
+function protocolOption(option: string, protocol: string, takesValue: boolean): OptDef {
+  return {
+    takesValue,
+    handler: (st) =>
+      warn(st, "unsupported-protocol-option", `${option} : option ${protocol}, hors du périmètre HTTP du SDK, ignorée.`, option),
+  };
 }
 
 function setHttpVersion(v: string): Handler {
@@ -346,6 +410,23 @@ function pushData(st: ParseState, mode: "data" | "binary", v: string) {
   } else {
     st.dataItems.push({ mode, value: v });
   }
+}
+
+/** --url-query : mêmes formes que --data-urlencode, plus "+contenu" (brut), ajouté à la query string. */
+function handleUrlQuery(st: ParseState, v: string) {
+  if (v.startsWith("+")) {
+    st.urlQuery.push(v.slice(1));
+    return;
+  }
+  if (v.startsWith("@") || (v.indexOf("=") === -1 && v.includes("@"))) {
+    warn(st, "unsupported-option", `--url-query ${v} : lecture depuis un fichier non prise en charge pour --url-query.`, "--url-query");
+    return;
+  }
+  const encode = (s: string) => encodeURIComponent(s).replace(/%20/g, "+");
+  const eq = v.indexOf("=");
+  if (eq === 0) st.urlQuery.push(encode(v.slice(1)));
+  else if (eq > 0) st.urlQuery.push(`${v.slice(0, eq)}=${encode(v.slice(eq + 1))}`);
+  else st.urlQuery.push(encode(v));
 }
 
 function handleDataUrlencode(st: ParseState, v: string) {
@@ -482,6 +563,16 @@ export function parseCurl(command: string, options: CurlParseOptions = {}): Pars
     shellVariables: options.variables,
   });
   const varCtx = createVariableContext(options.variables);
+
+  // --variable NAME=VALUE (curl 8.3+) : définitions consommées avant la
+  // substitution, pour que {{NAME}} soit résolu dans toute la commande.
+  const variableDefWarnings: ParseWarning[] = [];
+  for (let i = 0; i < rawTokens.length - 1; i++) {
+    if (rawTokens[i] === "--variable") {
+      defineCommandVariable(rawTokens[i + 1]!, varCtx, options.variables, variableDefWarnings);
+    }
+  }
+
   const tokens = rawTokens.map((t) => substitutePlaceholders(t, varCtx));
 
   // --next sépare des requêtes indépendantes
@@ -523,9 +614,55 @@ export function parseCurl(command: string, options: CurlParseOptions = {}): Pars
       level: "warning",
     });
   }
-  globalWarnings.push(...variableWarnings(varCtx));
+  globalWarnings.push(...variableDefWarnings, ...variableWarnings(varCtx));
 
   return { requests, warnings: globalWarnings };
+}
+
+/**
+ * Lit une définition --variable (curl 8.3+) :
+ * "NOM=valeur", "%NOM" (import depuis options.variables), "%NOM=défaut".
+ */
+function defineCommandVariable(
+  spec: string,
+  ctx: ReturnType<typeof createVariableContext>,
+  external: Record<string, string> | undefined,
+  warnings: ParseWarning[]
+) {
+  if (spec.startsWith("%")) {
+    const eq = spec.indexOf("=");
+    const name = eq === -1 ? spec.slice(1) : spec.slice(1, eq);
+    const fallback = eq === -1 ? undefined : spec.slice(eq + 1);
+    const value = external?.[name] ?? fallback;
+    if (value === undefined) {
+      warnings.push({
+        code: "unresolved-variable",
+        message: `--variable %${name} : aucune valeur dans options.variables et pas de défaut, variable non définie.`,
+        level: "warning",
+      });
+      return;
+    }
+    ctx.values.set(name, value);
+    return;
+  }
+  const eq = spec.indexOf("=");
+  if (eq <= 0) {
+    if (spec.includes("@")) {
+      warnings.push({
+        code: "unsupported-option",
+        message: `--variable ${spec} : lecture de la valeur depuis un fichier non prise en charge.`,
+        level: "warning",
+      });
+    } else {
+      warnings.push({
+        code: "invalid-variable",
+        message: `--variable ${spec} : format invalide (attendu NOM=valeur ou %NOM).`,
+        level: "warning",
+      });
+    }
+    return;
+  }
+  ctx.values.set(spec.slice(0, eq), spec.slice(eq + 1));
 }
 
 function parseGroup(tokens: string[]): ParseState {
@@ -687,6 +824,18 @@ function buildOne(st: ParseState, rawUrl: string, warnings: ParseWarning[]): Htt
     url = "http://" + url;
     pushWarn(warnings, "default-scheme", `Pas de schéma dans l'URL : "http://" ajouté (comme curl).`, undefined, "info");
   }
+
+  // curl parle de nombreux protocoles ; le SDK ne produit que des appels HTTP(S)
+  const scheme = (/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//.exec(url)?.[1] ?? "http").toLowerCase();
+  if (scheme !== "http" && scheme !== "https") {
+    pushWarn(
+      warnings,
+      "unsupported-protocol",
+      `Protocole "${scheme}://" hors périmètre : le SDK ne produit que des appels HTTP(S) via fetch.${protocolHint(scheme)}`,
+      undefined,
+      "error"
+    );
+  }
   // Corps
   let body: HttpRequestModel["body"];
   let bodyContentType: string | undefined;
@@ -715,6 +864,16 @@ function buildOne(st: ParseState, rawUrl: string, warnings: ParseWarning[]): Htt
       }
       url = appendQuery(url, resolved.text);
     }
+  }
+
+  // --url-query : toujours ajouté à la query string, quel que soit le corps
+  if (st.urlQuery.length > 0) {
+    for (const pair of st.urlQuery) {
+      const eq = pair.indexOf("=");
+      if (eq === -1) query.push([pair, ""]);
+      else query.push([pair.slice(0, eq), pair.slice(eq + 1)]);
+    }
+    url = appendQuery(url, st.urlQuery.join("&"));
   }
 
   // Méthode
@@ -779,6 +938,35 @@ function buildOne(st: ParseState, rawUrl: string, warnings: ParseWarning[]): Htt
 
 function pushWarn(warnings: ParseWarning[], code: string, message: string, option?: string, level: ParseWarning["level"] = "warning") {
   warnings.push({ code, message, option, level });
+}
+
+/** Suggestion d'alternative applicative pour un protocole non-HTTP. */
+function protocolHint(scheme: string): string {
+  switch (scheme) {
+    case "ws":
+    case "wss":
+      return " Pour du WebSocket, utilisez l'API WebSocket (navigateur et Node).";
+    case "smtp":
+    case "smtps":
+      return " Pour envoyer un mail côté Node, utilisez par exemple nodemailer.";
+    case "ftp":
+    case "ftps":
+      return " Utilisez une bibliothèque FTP dédiée (basic-ftp…).";
+    case "sftp":
+    case "scp":
+      return " Utilisez une bibliothèque SSH dédiée (ssh2…).";
+    case "imap":
+    case "imaps":
+    case "pop3":
+    case "pop3s":
+      return " Utilisez une bibliothèque mail dédiée (imapflow…).";
+    case "mqtt":
+      return " Utilisez une bibliothèque MQTT dédiée (mqtt.js…).";
+    case "file":
+      return " Lisez le fichier directement (fs côté Node).";
+    default:
+      return "";
+  }
 }
 
 /**

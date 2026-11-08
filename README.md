@@ -90,6 +90,10 @@ Détail : **[docs/postman-collections.md](docs/postman-collections.md)**.
 
 L'inventaire complet des cas d'usage curl et leur statut (✅ supporté, 🟡 partiel,
 ⚪ ignoré, ❌ signalé) est dans **[docs/curl-use-cases.md](docs/curl-use-cases.md)**.
+curl sait aussi parler SMTP (mails), FTP, WebSocket, IMAP, MQTT… : le panorama
+complet de ces capacités et de leur traitement par le SDK (hors périmètre, mais
+détectées et signalées avec une alternative suggérée) est dans
+**[docs/curl-coverage.md](docs/curl-coverage.md)**.
 
 En résumé : syntaxe shell complète (quotes, continuations bash `\` et cmd `^`, `$'...'`),
 méthodes, en-têtes, tous les `--data-*`, `--json`, `-G`, multipart `-F`, Basic/Bearer,

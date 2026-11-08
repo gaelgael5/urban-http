@@ -442,6 +442,7 @@ TOKEN=TOKEN_DEMO</textarea>
       { label: "Raccourci --json", cmd: `curl --json '{"tool": "urban-http"}' https://httpbin.org/post` },
       { label: "--data-urlencode", cmd: `curl --data-urlencode 'q=crème brûlée & co' https://httpbin.org/post` },
       { label: "Query string via -G", cmd: `curl -G -d 'q=paris' --data-urlencode 'quartier=le marais' https://httpbin.org/get` },
+      { label: "--url-query (7.87+)", cmd: `curl --url-query 'q=crème brûlée' --url-query 'page=2' https://httpbin.org/get` },
       { label: "Multipart (-F)", cmd: `curl -F 'name=jean' -F 'avatar=@photo.png;type=image/png' https://httpbin.org/post` },
       { label: "Corps depuis un fichier", cmd: `curl -d @payload.json https://httpbin.org/post` },
     ]},
@@ -465,11 +466,17 @@ TOKEN=TOKEN_DEMO</textarea>
       { label: "Variable shell $TOKEN", cmd: `curl -H "Authorization: Bearer $TOKEN" {{baseUrl}}/bearer` },
       { label: "Jamais dans les quotes simples", cmd: `curl -d 'brut=$TOKEN' -d "interprete=$TOKEN" {{baseUrl}}/post` },
       { label: "Dynamiques {{$guid}}…", cmd: `curl --json '{"id": "{{$guid}}", "ts": {{$timestamp}}, "cree": "{{$isoTimestamp}}"}' {{baseUrl}}/post` },
+      { label: "--variable curl 8.3", cmd: `curl --variable host=httpbin.org --expand-url 'https://{{host}}/get'` },
       { label: "Variable manquante", cmd: `curl {{apiHost}}/users`, warn: true },
     ]},
     { group: "Collection Postman", items: [
       { label: "Collection v2.1 (3 requêtes)", cmd: JSON.stringify(POSTMAN_SAMPLE, null, 2) },
       { label: "Variables non résolues", cmd: JSON.stringify(POSTMAN_UNRESOLVED, null, 2), warn: true },
+    ]},
+    { group: "Hors HTTP : signalé", items: [
+      { label: "Envoi de mail (SMTP)", cmd: `curl smtp://mail.example.com --mail-from moi@example.com --mail-rcpt toi@example.com -T message.txt`, warn: true },
+      { label: "WebSocket (ws://)", cmd: `curl ws://echo.example.com/socket`, warn: true },
+      { label: "Transfert FTP", cmd: `curl -Q "DELE vieux.txt" ftp://ftp.example.com/fichier.txt`, warn: true },
     ]},
     { group: "Limites signalées", items: [
       { label: "Certificat client (--cert)", cmd: `curl --cert client.pem --key client.key https://httpbin.org/get`, warn: true },
