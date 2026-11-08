@@ -324,6 +324,43 @@ def _h_proxy(st: "_State", v: str) -> None:
     st.warn("node-only-option", "--proxy : appliqué via le proxy HTTP(S) de l'exécuteur ; sans effet dans un contexte restreint.", "--proxy", "info")
 
 
+def _h_cert(st: "_State", v: str) -> None:
+    # --cert accepte "certificat:motdepasse"
+    if ":" in v and not v.lower().startswith(("pkcs11:",)):
+        cert, _, pwd = v.partition(":")
+        st.options.client_cert = cert
+        if pwd and st.options.key_password is None:
+            st.options.key_password = pwd
+    else:
+        st.options.client_cert = v
+
+
+def _h_limit_rate(st: "_State", v: str) -> None:
+    rate = _parse_rate(v)
+    if rate is None:
+        st.warn("invalid-value", f"--limit-rate {v} : valeur invalide (attendu ex. 100K, 1M, 2G ou un nombre d'octets).", "--limit-rate")
+    else:
+        st.options.limit_rate = rate
+
+
+def _h_continue_at(st: "_State", v: str) -> None:
+    if v.strip() == "-":
+        st.options.continue_at = -1  # auto : offset déterminé à partir du fichier de sortie
+    elif v.strip().isdigit():
+        st.options.continue_at = int(v)
+    else:
+        st.warn("invalid-value", f"-C/--continue-at {v} : attendu un offset ou '-'.", "-C/--continue-at")
+
+
+def _parse_rate(v: str):
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*([kKmMgG]?)\s*$", v)
+    if not m:
+        return None
+    base = float(m.group(1))
+    mult = {"": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}[m.group(2).lower()]
+    return int(base * mult)
+
+
 # --------------------------------------------------------------------------
 # Tables d'options
 # --------------------------------------------------------------------------
@@ -367,9 +404,11 @@ LONG_OPTIONS: Dict[str, _Opt] = {
     "location-trusted": _Opt(False, lambda st, v: (setattr(st.options, "follow_redirects", True), st.warn("partial-option", "--location-trusted : les identifiants ne seront pas renvoyés aux hôtes de redirection.", "--location-trusted", "info"))),
     "max-redirs": _Opt(True, lambda st, v: setattr(st.options, "max_redirs", int(v))),
     "insecure": _Opt(False, lambda st, v: setattr(st.options, "insecure", True)),
-    "cacert": _Opt(True, _unsupported("--cacert", "certificat CA personnalisé")),
-    "cert": _Opt(True, _unsupported("--cert", "certificat client")),
-    "key": _Opt(True, _unsupported("--key", "clé privée cliente")),
+    "cacert": _Opt(True, lambda st, v: setattr(st.options, "ca_cert", v)),
+    "capath": _Opt(True, lambda st, v: setattr(st.options, "ca_path", v)),
+    "cert": _Opt(True, _h_cert),
+    "key": _Opt(True, lambda st, v: setattr(st.options, "client_key", v)),
+    "pass": _Opt(True, lambda st, v: setattr(st.options, "key_password", v)),
     "proxy": _Opt(True, _h_proxy),
     "proxy-user": _Opt(True, lambda st, v: setattr(st.options, "proxy_user", v)),
     "noproxy": _Opt(True, _noop),
@@ -382,17 +421,17 @@ LONG_OPTIONS: Dict[str, _Opt] = {
     "ipv6": _Opt(False, _noop),
     "tlsv1.2": _Opt(False, _noop),
     "tlsv1.3": _Opt(False, _noop),
-    "resolve": _Opt(True, _unsupported("--resolve", "résolution DNS personnalisée")),
-    "connect-to": _Opt(True, _unsupported("--connect-to", "redirection de connexion")),
+    "resolve": _Opt(True, lambda st, v: st.options.resolve.append(v)),
+    "connect-to": _Opt(True, lambda st, v: st.options.connect_to.append(v)),
     "interface": _Opt(True, _unsupported("--interface", "interface réseau")),
-    "unix-socket": _Opt(True, _unsupported("--unix-socket", "socket Unix")),
+    "unix-socket": _Opt(True, lambda st, v: setattr(st.options, "unix_socket", v)),
     "max-time": _Opt(True, lambda st, v: setattr(st.options, "timeout_ms", round(float(v) * 1000))),
     "connect-timeout": _Opt(True, lambda st, v: (setattr(st.options, "connect_timeout_ms", round(float(v) * 1000)), st.warn("partial-option", "--connect-timeout : pas de timeout de connexion distinct, approximé par un timeout global.", "--connect-timeout", "info"))),
     "retry": _Opt(True, lambda st, v: setattr(st.options, "retry", int(v))),
     "retry-delay": _Opt(True, lambda st, v: setattr(st.options, "retry_delay_ms", round(float(v) * 1000))),
     "retry-max-time": _Opt(True, _noop),
     "retry-all-errors": _Opt(False, _noop),
-    "limit-rate": _Opt(True, _unsupported("--limit-rate", "limitation de débit")),
+    "limit-rate": _Opt(True, _h_limit_rate),
     "speed-limit": _Opt(True, _noop),
     "speed-time": _Opt(True, _noop),
     "keepalive-time": _Opt(True, _noop),
@@ -411,13 +450,13 @@ LONG_OPTIONS: Dict[str, _Opt] = {
     "ssl": _Opt(False, _protocol_option("--ssl", "upgrade TLS des protocoles non-HTTP")),
     "ssl-reqd": _Opt(False, _protocol_option("--ssl-reqd", "upgrade TLS des protocoles non-HTTP")),
     "crlf": _Opt(False, _protocol_option("--crlf", "conversion de fins de ligne (FTP/SMTP)")),
-    "netrc": _Opt(False, _unsupported("-n/--netrc", "identifiants depuis ~/.netrc")),
-    "netrc-file": _Opt(True, _unsupported("--netrc-file", "identifiants depuis un fichier netrc")),
-    "netrc-optional": _Opt(False, _unsupported("--netrc-optional", "identifiants depuis ~/.netrc")),
+    "netrc": _Opt(False, lambda st, v: setattr(st.options, "use_netrc", True)),
+    "netrc-file": _Opt(True, lambda st, v: (setattr(st.options, "netrc_file", v), setattr(st.options, "use_netrc", True))),
+    "netrc-optional": _Opt(False, lambda st, v: (setattr(st.options, "use_netrc", True), setattr(st.options, "netrc_optional", True))),
     "time-cond": _Opt(True, _unsupported("-z/--time-cond", "requête conditionnelle If-Modified-Since")),
     "etag-compare": _Opt(True, _unsupported("--etag-compare", "requête conditionnelle If-None-Match")),
     "etag-save": _Opt(True, _noop_info("--etag-save")),
-    "continue-at": _Opt(True, _unsupported("-C/--continue-at", "reprise de transfert")),
+    "continue-at": _Opt(True, _h_continue_at),
     "socks4": _Opt(True, _unsupported("--socks4", "proxy SOCKS")),
     "socks4a": _Opt(True, _unsupported("--socks4a", "proxy SOCKS")),
     "socks5": _Opt(True, _unsupported("--socks5", "proxy SOCKS")),

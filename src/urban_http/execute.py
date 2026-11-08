@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Tuple
 from .cookies import cookies_for_url, parse_netscape_cookies
 from .digest import build_digest_authorization, parse_digest_challenge
 from .model import FileReader, HttpRequestModel
+from .net import build_connection_overrides, make_override_handlers, make_unix_socket_handler, read_limited
 
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
@@ -91,6 +92,19 @@ def prepare_request(req: HttpRequestModel, file_reader: Optional[FileReader] = N
     ah = auth_header(req)
     if ah and not any(n.lower() == "authorization" for n, _ in headers):
         headers.append(ah)
+
+    # .netrc : identifiants pris dans le fichier netrc si aucune auth explicite
+    if req.options.use_netrc and not any(n.lower() == "authorization" for n, _ in headers):
+        netrc_auth = _netrc_auth(req, issues)
+        if netrc_auth:
+            headers.append(netrc_auth)
+
+    # -C/--continue-at : reprise via un en-tête Range (offset explicite)
+    if req.options.continue_at is not None and not any(n.lower() == "range" for n, _ in headers):
+        if req.options.continue_at >= 0:
+            headers.append(("Range", f"bytes={req.options.continue_at}-"))
+        else:
+            issues.append("-C - (reprise automatique) : fournissez un offset explicite, la taille du fichier de sortie n'est pas connue ici.")
 
     # Cookies depuis fichier(s) -b
     if req.cookie_files:
@@ -174,27 +188,69 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _build_opener(req: HttpRequestModel):
-    handlers = []
-    if not req.options.follow_redirects:
-        handlers.append(_NoRedirect())
-    if req.options.insecure:
-        ctx = ssl.create_default_context()
+def _limited_redirect(max_redirs: int):
+    """Handler de redirection appliquant une limite (--max-redirs)."""
+
+    class _LimitedRedirect(urllib.request.HTTPRedirectHandler):
+        max_repeats = max_redirs if max_redirs >= 0 else 1000
+        max_redirections = max_redirs if max_redirs >= 0 else 1000
+
+    return _LimitedRedirect()
+
+
+def build_ssl_context(req: HttpRequestModel) -> Optional[ssl.SSLContext]:
+    """Contexte SSL selon --insecure, --cacert/--capath et --cert/--key/--pass.
+    Renvoie None si rien de particulier n'est demandé.
+    """
+    opts = req.options
+    needs = opts.insecure or opts.ca_cert or opts.ca_path or opts.client_cert
+    if not needs:
+        return None
+    ctx = ssl.create_default_context(cafile=opts.ca_cert, capath=opts.ca_path)
+    if opts.insecure:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-        handlers.append(urllib.request.HTTPSHandler(context=ctx))
-    if req.options.proxy:
-        proxy = req.options.proxy
+    if opts.client_cert:
+        ctx.load_cert_chain(
+            certfile=opts.client_cert,
+            keyfile=opts.client_key,
+            password=opts.key_password,
+        )
+    return ctx
+
+
+def _build_opener(req: HttpRequestModel):
+    handlers = []
+    opts = req.options
+    ssl_context = build_ssl_context(req)
+
+    # Redirections
+    if not opts.follow_redirects:
+        handlers.append(_NoRedirect())
+    elif opts.max_redirs is not None:
+        handlers.append(_limited_redirect(opts.max_redirs))
+
+    # Transport : socket Unix, redirection de connexion, ou HTTPS standard
+    if opts.unix_socket:
+        handlers.append(make_unix_socket_handler(opts.unix_socket))
+    elif opts.resolve or opts.connect_to:
+        overrides = build_connection_overrides(opts.resolve, opts.connect_to)
+        handlers.extend(make_override_handlers(overrides, ssl_context))
+    elif ssl_context is not None:
+        handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
+
+    if opts.proxy:
+        proxy = opts.proxy
         if "://" not in proxy:
             proxy = "http://" + proxy
-        if req.options.proxy_user and "@" not in proxy:
+        if opts.proxy_user and "@" not in proxy:
             scheme, rest = proxy.split("://", 1)
-            proxy = f"{scheme}://{req.options.proxy_user}@{rest}"
+            proxy = f"{scheme}://{opts.proxy_user}@{rest}"
         handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
     return urllib.request.build_opener(*handlers)
 
 
-def _do_request(opener, prepared: PreparedRequest, timeout: Optional[float]) -> HttpResponse:
+def _do_request(opener, prepared: PreparedRequest, timeout: Optional[float], limit_rate: Optional[int] = None) -> HttpResponse:
     request = urllib.request.Request(prepared.url, data=prepared.body, method=prepared.method)
     for n, v in prepared.headers:
         request.add_header(n, v)
@@ -203,7 +259,7 @@ def _do_request(opener, prepared: PreparedRequest, timeout: Optional[float]) -> 
     except urllib.error.HTTPError as e:
         resp = e  # HTTPError est aussi une réponse lisible
     headers = list(resp.headers.items())
-    body = resp.read()
+    body = read_limited(resp, limit_rate) if limit_rate else resp.read()
     status = resp.getcode() if hasattr(resp, "getcode") and resp.getcode() else getattr(resp, "status", 0)
     reason = getattr(resp, "reason", "") or ""
     return HttpResponse(status=status or 0, reason=reason, headers=headers, body=body, url=prepared.url)
@@ -222,7 +278,7 @@ def execute(req: HttpRequestModel, file_reader: Optional[FileReader] = None) -> 
     while attempt < max_attempts:
         attempt += 1
         try:
-            response = _do_request(opener, prepared, timeout)
+            response = _do_request(opener, prepared, timeout, req.options.limit_rate)
             # Négociation Digest
             if response.status == 401 and req.auth and req.auth.kind == "digest" and req.auth.username is not None:
                 retried = _answer_digest(req, prepared, response, opener, timeout, issues)
@@ -266,3 +322,28 @@ def _retry_delay(req: HttpRequestModel, attempt: int) -> float:
     if req.options.retry_delay_ms:
         return req.options.retry_delay_ms / 1000
     return min(1.0 * 2 ** (attempt - 1), 600.0)
+
+
+def _netrc_auth(req: HttpRequestModel, issues: List[str]) -> Optional[Tuple[str, str]]:
+    """Identifiants Basic tirés d'un fichier netrc pour l'hôte de la requête."""
+    import netrc
+    from urllib.parse import urlsplit
+
+    host = urlsplit(req.url).hostname or ""
+    try:
+        parsed = netrc.netrc(req.options.netrc_file) if req.options.netrc_file else netrc.netrc()
+    except FileNotFoundError:
+        if not req.options.netrc_optional:
+            issues.append("netrc : fichier introuvable.")
+        return None
+    except netrc.NetrcParseError as e:
+        issues.append(f"netrc : fichier illisible ({e}).")
+        return None
+    auth = parsed.authenticators(host)
+    if not auth:
+        if not req.options.netrc_optional:
+            issues.append(f"netrc : aucune entrée pour {host}.")
+        return None
+    login, _account, password = auth
+    cred = f"{login or ''}:{password or ''}"
+    return ("Authorization", "Basic " + base64.b64encode(cred.encode()).decode("ascii"))

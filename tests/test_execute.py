@@ -51,7 +51,7 @@ def _resp(status):
 def test_retry_on_transient(monkeypatch):
     calls = {"n": 0}
 
-    def fake(opener, prepared, timeout):
+    def fake(opener, prepared, timeout, limit_rate=None):
         calls["n"] += 1
         return _resp(503 if calls["n"] < 3 else 200)
 
@@ -64,7 +64,7 @@ def test_retry_on_transient(monkeypatch):
 def test_no_retry_without_flag(monkeypatch):
     calls = {"n": 0}
 
-    def fake(opener, prepared, timeout):
+    def fake(opener, prepared, timeout, limit_rate=None):
         calls["n"] += 1
         return _resp(503)
 
@@ -76,7 +76,7 @@ def test_no_retry_without_flag(monkeypatch):
 def test_digest_handshake(monkeypatch):
     calls = []
 
-    def fake(opener, prepared, timeout):
+    def fake(opener, prepared, timeout, limit_rate=None):
         auth = next((v for n, v in prepared.headers if n.lower() == "authorization"), None)
         calls.append(auth)
         if len(calls) == 1:

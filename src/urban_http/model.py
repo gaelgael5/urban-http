@@ -80,6 +80,22 @@ class RequestOptions:
     proxy: Optional[str] = None
     proxy_user: Optional[str] = None
     http_version: Optional[str] = None
+    # TLS client
+    client_cert: Optional[str] = None  # --cert
+    client_key: Optional[str] = None   # --key
+    key_password: Optional[str] = None  # --pass
+    ca_cert: Optional[str] = None      # --cacert
+    ca_path: Optional[str] = None      # --capath
+    # Réseau avancé
+    use_netrc: bool = False            # -n / --netrc
+    netrc_file: Optional[str] = None   # --netrc-file
+    netrc_optional: bool = False       # --netrc-optional
+    resolve: List[str] = field(default_factory=list)      # --resolve host:port:addr
+    connect_to: List[str] = field(default_factory=list)   # --connect-to h:p:ch:cp
+    unix_socket: Optional[str] = None  # --unix-socket
+    # Divers
+    limit_rate: Optional[int] = None   # --limit-rate, en octets/seconde
+    continue_at: Optional[int] = None  # -C/--continue-at (offset ; -1 = "-" auto)
 
 
 @dataclass

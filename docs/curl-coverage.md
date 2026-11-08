@@ -65,7 +65,7 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 | Digest `qop=auth-int` | ❌ (hachage du corps requis) |
 | NTLM, Negotiate/Kerberos (`--ntlm`, `--negotiate`, `--krb`, `--delegation`) | ❌ (protocoles propriétaires multi-allers) |
 | AWS SigV4 (`--aws-sigv4`) | ❌ (signature non calculée) |
-| `.netrc` (`-n`, `--netrc`, `--netrc-file`) | ❌ signalé |
+| `.netrc` (`-n`, `--netrc`, `--netrc-file`, `--netrc-optional`) | ✅ (module `netrc`, auth Basic) |
 
 ## 4. Cookies
 
@@ -81,7 +81,7 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 | Fonction | Statut |
 |---|---|
 | `-k/--insecure` | ✅ (contexte SSL non vérifié) |
-| CA personnalisée (`--cacert`, `--capath`), certificat client (`--cert`, `--key`, `--pass`) | ❌ signalés |
+| CA personnalisée (`--cacert`, `--capath`), certificat client (`--cert`, `--key`, `--pass`) | ✅ (contexte `ssl`) |
 | Épinglage (`--pinnedpubkey`), ciphers (`--ciphers`, `--tls13-ciphers`) | ❌ / ⚪ |
 | Versions TLS (`--tlsv1.2`, `--tlsv1.3`) | ⚪ négociées par la plateforme |
 
@@ -102,7 +102,7 @@ Détail complet : [curl-use-cases.md](curl-use-cases.md).
 | `--connect-timeout` | 🟡 approximé |
 | `--retry`, `--retry-delay` (backoff exponentiel sur 408/429/5xx) | ✅ |
 | `--retry-all-errors`, `--retry-max-time`, `--retry-connrefused` | ⚪ acceptées, non différenciées |
-| Reprise de transfert (`-C/--continue-at`) | ❌ signalé |
+| Reprise de transfert (`-C/--continue-at`, offset explicite) | ✅ via en-tête `Range` |
 
 ## 8. Variables
 
@@ -121,7 +121,8 @@ Détail complet : [variables.md](variables.md).
 |---|---|
 | Upload HTTP (`-T` → PUT) | ✅ |
 | Exécution parallèle (`-Z/--parallel`, `--parallel-max`) | 🟡 les requêtes sont toutes renvoyées ; l'orchestration (`Promise.all`) revient à l'application |
-| Limitation de débit (`--limit-rate`, `--rate`), seuils (`--speed-limit/-time`) | ❌ / ⚪ |
+| Limitation de débit (`--limit-rate`, suffixes k/M/G) | ✅ (plafonne la lecture) |
+| `--rate`, seuils (`--speed-limit/-time`) | ⚪ |
 | Taille maximale (`--max-filesize`) | ⚪ |
 | HTTP/2, HTTP/3 (`--http2`, `--http3`) | ⚪ négociés par la plateforme |
 
@@ -129,8 +130,9 @@ Détail complet : [variables.md](variables.md).
 
 | Fonction | Statut |
 |---|---|
-| `--resolve`, `--connect-to`, `--dns-servers`, `--doh-url` | ❌ signalés |
-| `--interface`, `--local-port`, `--unix-socket`, `--abstract-unix-socket` | ❌ signalés |
+| `--resolve`, `--connect-to` | ✅ (Host/SNI d'origine préservés) |
+| `--unix-socket` | ✅ (connexion AF_UNIX) |
+| `--dns-servers`, `--doh-url`, `--interface`, `--local-port`, `--abstract-unix-socket` | ❌ signalés |
 | `-4`, `-6`, `--tcp-nodelay`, `--tcp-fastopen`, `--happy-eyeballs-timeout-ms`, `--keepalive-time` | ⚪ |
 
 ## 11. Fonctions CLI (sans objet dans un SDK)

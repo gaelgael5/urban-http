@@ -27,9 +27,10 @@ def test_http_no_protocol_warning():
 
 
 def test_recognized_options():
-    r = one('curl -n -z "10 Nov 2026" -C 1024 --socks5 localhost:1080 https://e.com')
+    # -z et --socks5 restent signalés ; -n (netrc) et -C (reprise) sont désormais gérés
+    r = one('curl -z "10 Nov 2026" --socks5 localhost:1080 https://e.com')
     opts = [w.option for w in r.warnings if w.code == "unsupported-option"]
-    assert "-n/--netrc" in opts and "-z/--time-cond" in opts and "-C/--continue-at" in opts and "--socks5" in opts
+    assert "-z/--time-cond" in opts and "--socks5" in opts
     assert not any(w.code == "unknown-option" for w in r.warnings)
 
 

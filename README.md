@@ -138,5 +138,6 @@ python -m pytest               # 148 tests : tokenizer, parser, Postman, variabl
 ## Feuille de route
 
 - Protocoles restants : LDAP, TELNET.
-- Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
+- Auth : AWS SigV4, NTLM/Negotiate, Digest `qop=auth-int`.
+- Requêtes conditionnelles (`-z`, `--etag-compare`), reprise `-C -` automatique.
 - Générateurs de code supplémentaires (httpx, requests).

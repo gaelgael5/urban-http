@@ -120,11 +120,13 @@ voir **[curl-coverage.md](curl-coverage.md)**.
 | Cas d'usage | Options | Statut |
 |---|---|---|
 | Ignorer la vérification TLS | `-k, --insecure` | ✅ (contexte SSL non vérifié) |
-| CA / certificat client / clé | `--cacert, --cert (-E), --key` | ❌ warning |
+| CA personnalisée, certificat client, mot de passe de clé | `--cacert, --capath, --cert (-E), --key, --pass` | ✅ (contexte SSL : `load_verify_locations` / `load_cert_chain`) |
 | Proxy HTTP(S), avec authentification | `-x, --proxy, --proxy-user (-U)` | ✅ (via `urllib.ProxyHandler`) |
 | Version HTTP | `--http1.1, --http2, --http3` | ⚪ négociée par la plateforme, conservée à titre informatif |
 | IPv4/IPv6, versions TLS | `-4, -6, --tlsv1.2, --tlsv1.3` | ⚪ |
-| DNS personnalisé, socket Unix, interface | `--resolve, --connect-to, --unix-socket, --interface` | ❌ warning |
+| Résolution DNS forcée, redirection de connexion, socket Unix | `--resolve, --connect-to, --unix-socket` | ✅ (Host et SNI d'origine préservés) |
+| Interface réseau, DNS/DoH | `--interface, --dns-servers, --doh-url` | ❌ warning |
+| Identifiants depuis netrc | `-n/--netrc, --netrc-file, --netrc-optional` | ✅ (module `netrc`, Basic) |
 
 ## 9. Timeouts et robustesse
 
@@ -134,7 +136,8 @@ voir **[curl-coverage.md](curl-coverage.md)**.
 | Timeout de connexion | `--connect-timeout` | 🟡 approximé par le timeout global |
 | Retries sur erreurs transitoires (408, 429, 500, 502, 503, 504) | `--retry N` | ✅ (backoff exponentiel 1s, 2s, 4s... comme curl) |
 | Délai entre retries | `--retry-delay` | ✅ |
-| Limitation de débit | `--limit-rate` | ❌ warning |
+| Limitation de débit (suffixes k/M/G) | `--limit-rate` | ✅ (plafonne la lecture de la réponse) |
+| Reprise de transfert (offset explicite) | `-C/--continue-at` | ✅ via en-tête `Range` (`-C -` auto : non géré sans fichier de sortie) |
 
 ## 10. Options CLI sans effet sur la requête (acceptées, ignorées)
 
