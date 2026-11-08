@@ -27,6 +27,39 @@ export { parseDigestChallenge, buildDigestAuthorization, md5Hex } from "./digest
 export type { DigestChallenge, DigestCredentials, DigestOptions } from "./digest.js";
 export { parseNetscapeCookies, cookiesForUrl } from "./cookies.js";
 export type { CookieEntry } from "./cookies.js";
+
+// Commande unifiée (HTTP + autres protocoles)
+export { parseCommand, run } from "./command.js";
+export type { ParsedCommand, RunResult, RunOptions } from "./command.js";
+
+// Sous-système « protocoles non-HTTP » (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB)
+export {
+  parseProtocolCommand,
+  registerProtocol,
+  unregisterProtocol,
+  getProtocolAdapter,
+  registeredSchemes,
+  executeProtocol,
+  registerDefaultNodeAdapters,
+  fileAdapter,
+  smtpAdapter,
+  ftpAdapter,
+  sftpAdapter,
+  pop3Adapter,
+  mqttAdapter,
+  tftpAdapter,
+  smbAdapter,
+} from "./protocols/index.js";
+export type {
+  ProtocolScheme,
+  ProtocolRequest,
+  ProtocolResult,
+  ProtocolAdapter,
+  ProtocolContext,
+  ProtocolIO,
+  TransferDirection,
+  Payload,
+} from "./protocols/index.js";
 export type {
   AuthSpec,
   BodyKind,

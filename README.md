@@ -1,12 +1,15 @@
 # urban-http
 
 SDK pour transformer une commande **curl** ou une **collection Postman** en
-**appels HTTP exécutables** dans une application — Node ≥ 18 ou navigateur, sans dépendance à l'exécution.
+**appels exécutables** dans une application — Node ≥ 18 ou navigateur.
+HTTP via `fetch`, et les autres protocoles de curl (SMTP, FTP, SFTP, POP3,
+MQTT, TFTP, FILE, SMB) via des adaptateurs Node optionnels.
 
 ```
 commande curl ───▶ parseCurl() ────┐
                                    ├──▶ HttpRequestModel ──▶ toFetch() / execute()
 collection Postman ─▶ parsePostman() ┘
+                   └▶ parseCommand() ──▶ ProtocolRequest ──▶ run() (adaptateur)
 ```
 
 ## Utilisation
@@ -70,6 +73,26 @@ Sans `options.variables`, les `$` des commandes curl ne sont pas touchés.
 Guide complet (contextes de quoting, priorités, codes de warning) :
 **[docs/variables.md](docs/variables.md)**.
 
+## Autres protocoles (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB)
+
+```ts
+import { run, registerDefaultNodeAdapters } from "urban-http";
+
+registerDefaultNodeAdapters(); // une fois, côté Node
+
+// Envoi d'un mail (nodemailer), téléversement FTP (basic-ftp), etc.
+const { result } = await run(
+  `curl smtp://mail.example.com --mail-from moi@x.com --mail-rcpt toi@y.com -T message.eml`
+);
+console.log(result.summary);
+```
+
+`run()` détecte le protocole et route : `fetch` pour HTTP, l'adaptateur sinon.
+Les bibliothèques sous-jacentes sont des **peer dependencies optionnelles**
+(installez seulement celles utilisées) ; POP3, TFTP et FILE n'en requièrent
+aucune. Sous-système compartimenté (`src/protocols/`), cœur HTTP inchangé.
+Détail : **[docs/protocols.md](docs/protocols.md)**.
+
 ## Collections Postman
 
 ```ts
@@ -124,6 +147,6 @@ npm run build          # tsc -> dist/ + bundle navigateur
 
 ## Feuille de route
 
+- Protocoles restants : WebSocket (API native), IMAP, SCP.
 - Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
-- Davantage de variables dynamiques Postman (`{{$randomCity}}`, `{{$randomEmail}}`…).
 - Générateurs de code supplémentaires (axios, Python requests…).

@@ -30,18 +30,27 @@
     "sdk"
   ],
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.0",
     "undici": "^8.12.4",
     "vitest": "^2.1.0"
   },
   "peerDependencies": {
-    "undici": ">=6"
+    "undici": ">=6",
+    "nodemailer": ">=6",
+    "basic-ftp": ">=5",
+    "ssh2": ">=1",
+    "mqtt": ">=5",
+    "@marsaud/smb2": ">=0.18"
   },
   "peerDependenciesMeta": {
-    "undici": {
-      "optional": true
-    }
+    "undici": { "optional": true },
+    "nodemailer": { "optional": true },
+    "basic-ftp": { "optional": true },
+    "ssh2": { "optional": true },
+    "mqtt": { "optional": true },
+    "@marsaud/smb2": { "optional": true }
   },
   "engines": {
     "node": ">=18"

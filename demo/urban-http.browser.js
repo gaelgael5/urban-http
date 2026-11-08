@@ -1,9 +1,17 @@
 "use strict";
 var UrbanHttp = (() => {
+  var __create = Object.create;
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+    get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+  }) : x)(function(x) {
+    if (typeof require !== "undefined") return require.apply(this, arguments);
+    throw Error('Dynamic require of "' + x + '" is not supported');
+  });
   var __export = (target, all) => {
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
@@ -16,6 +24,14 @@ var UrbanHttp = (() => {
     }
     return to;
   };
+  var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+    // If the importer is in node compatibility mode or this is not an ESM
+    // file that has been converted to a CommonJS file using a Babel-
+    // compatible transform (i.e. "__esModule" has not been set), then set
+    // "default" to the CommonJS "module.exports" for node compatibility.
+    isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+    mod
+  ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
   // src/index.ts
@@ -28,19 +44,36 @@ var UrbanHttp = (() => {
     cookiesForUrl: () => cookiesForUrl,
     createVariableContext: () => createVariableContext,
     execute: () => execute,
+    executeProtocol: () => executeProtocol,
     expandCurlGlobs: () => expandCurlGlobs,
+    fileAdapter: () => fileAdapter,
+    ftpAdapter: () => ftpAdapter,
+    getProtocolAdapter: () => getProtocolAdapter,
     isPostmanCollection: () => isPostmanCollection,
     md5Hex: () => md5Hex,
+    mqttAdapter: () => mqttAdapter,
+    parseCommand: () => parseCommand,
     parseCurl: () => parseCurl,
     parseDigestChallenge: () => parseDigestChallenge,
     parseNetscapeCookies: () => parseNetscapeCookies,
     parsePostman: () => parsePostman,
     parsePostmanEnvironment: () => parsePostmanEnvironment,
+    parseProtocolCommand: () => parseProtocolCommand,
+    pop3Adapter: () => pop3Adapter,
+    registerDefaultNodeAdapters: () => registerDefaultNodeAdapters,
+    registerProtocol: () => registerProtocol,
+    registeredSchemes: () => registeredSchemes,
+    run: () => run,
+    sftpAdapter: () => sftpAdapter,
+    smbAdapter: () => smbAdapter,
+    smtpAdapter: () => smtpAdapter,
     substitutePlaceholders: () => substitutePlaceholders,
+    tftpAdapter: () => tftpAdapter,
     toFetch: () => toFetch,
     toFetchCode: () => toFetchCode,
     tokenize: () => tokenize,
-    tokenizeFull: () => tokenizeFull
+    tokenizeFull: () => tokenizeFull,
+    unregisterProtocol: () => unregisterProtocol
   });
 
   // src/tokenize.ts
@@ -2008,6 +2041,1211 @@ var UrbanHttp = (() => {
     let bin = "";
     for (const b of bytes) bin += String.fromCharCode(b);
     return btoa(bin);
+  }
+
+  // src/protocols/types.ts
+  var DEFAULT_PORTS = {
+    smtp: 25,
+    smtps: 465,
+    ftp: 21,
+    ftps: 990,
+    sftp: 22,
+    pop3: 110,
+    pop3s: 995,
+    mqtt: 1883,
+    mqtts: 8883,
+    tftp: 69,
+    file: 0,
+    smb: 445,
+    smbs: 445
+  };
+  function isSecureScheme(scheme) {
+    return scheme === "smtps" || scheme === "ftps" || scheme === "pop3s" || scheme === "mqtts" || scheme === "smbs";
+  }
+
+  // src/protocols/parse.ts
+  var VALUE_OPTIONS = /* @__PURE__ */ new Set([
+    "-T",
+    "--upload-file",
+    "-o",
+    "--output",
+    "-u",
+    "--user",
+    "-d",
+    "--data",
+    "--data-raw",
+    "--data-binary",
+    "--data-ascii",
+    "-Q",
+    "--quote",
+    "-r",
+    "--range",
+    "-m",
+    "--max-time",
+    "--connect-timeout",
+    "--mail-from",
+    "--mail-rcpt",
+    "--mail-auth",
+    "--ftp-method",
+    "-P",
+    "--ftp-port",
+    "--url"
+  ]);
+  var KNOWN_SCHEMES = /* @__PURE__ */ new Set([
+    "smtp",
+    "smtps",
+    "ftp",
+    "ftps",
+    "sftp",
+    "pop3",
+    "pop3s",
+    "mqtt",
+    "mqtts",
+    "tftp",
+    "file",
+    "smb",
+    "smbs"
+  ]);
+  function parseProtocolCommand(command, options = {}) {
+    const { tokens: rawTokens } = tokenizeFull(command, { shellVariables: options.variables });
+    const varCtx = createVariableContext(options.variables);
+    const tokens = rawTokens.map((t) => substitutePlaceholders(t, varCtx));
+    const warnings = [];
+    let rawUrl;
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      if (tok === "--url") {
+        rawUrl = tokens[i + 1];
+        break;
+      }
+      if (!tok.startsWith("-")) {
+        rawUrl = tok;
+        break;
+      }
+      if (VALUE_OPTIONS.has(tok)) i++;
+    }
+    if (!rawUrl) {
+      return { scheme: "", isHttp: false, warnings: [{ code: "no-url", message: "Aucune URL dans la commande.", level: "error" }] };
+    }
+    const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//.exec(rawUrl);
+    const scheme = (schemeMatch?.[1] ?? "http").toLowerCase();
+    if (scheme === "http" || scheme === "https") {
+      return { scheme, isHttp: true, warnings };
+    }
+    if (!KNOWN_SCHEMES.has(scheme)) {
+      return {
+        scheme,
+        isHttp: false,
+        warnings: [
+          {
+            code: "unsupported-protocol",
+            message: `Protocole "${scheme}://" sans adaptateur dans le SDK.`,
+            level: "error"
+          }
+        ]
+      };
+    }
+    const request = buildProtocolRequest(scheme, rawUrl, tokens, varCtx, warnings);
+    return { scheme, isHttp: false, request, warnings };
+  }
+  function buildProtocolRequest(scheme, rawUrl, tokens, varCtx, warnings) {
+    const opts = scanOptions(tokens, warnings);
+    const { host, port, path, userFromUrl, passFromUrl } = dissectUrl(scheme, rawUrl);
+    let username = opts.user ? opts.user.split(":")[0] : userFromUrl;
+    let password = opts.user ? opts.user.slice(opts.user.indexOf(":") + 1 || opts.user.length) : passFromUrl;
+    if (opts.user && !opts.user.includes(":")) password = void 0;
+    const secure = isSecureScheme(scheme) || opts.sslReqd;
+    let direction = "download";
+    if (scheme === "smtp" || scheme === "smtps") direction = "send";
+    else if (opts.upload !== void 0) direction = "upload";
+    else if (opts.listOnly) direction = "list";
+    else if ((scheme === "mqtt" || scheme === "mqtts") && opts.data.length > 0) direction = "publish";
+    else if (scheme === "mqtt" || scheme === "mqtts") direction = "subscribe";
+    const payload = resolvePayload(opts, scheme, direction);
+    const req = {
+      scheme,
+      url: rawUrl,
+      host,
+      port: port ?? DEFAULT_PORTS[scheme],
+      path,
+      direction,
+      username,
+      password,
+      secure,
+      tlsOpportunistic: opts.ssl && !secure,
+      insecure: opts.insecure,
+      payload,
+      output: opts.output,
+      timeoutMs: opts.maxTimeMs,
+      connectTimeoutMs: opts.connectTimeoutMs,
+      range: opts.range,
+      warnings
+    };
+    if (scheme === "smtp" || scheme === "smtps") {
+      req.smtp = {
+        from: opts.mailFrom,
+        recipients: opts.mailRcpt,
+        allowRcptFailures: opts.mailRcptAllowFails
+      };
+      if (opts.mailRcpt.length === 0) {
+        warnings.push({
+          code: "missing-recipient",
+          message: "SMTP : aucun --mail-rcpt fourni, le mail n'aura pas de destinataire.",
+          level: "warning"
+        });
+      }
+    }
+    if (scheme === "ftp" || scheme === "ftps") {
+      req.ftp = { quote: opts.quote, createDirs: opts.ftpCreateDirs, listOnly: opts.listOnly };
+    }
+    if (scheme === "mqtt" || scheme === "mqtts") {
+      req.mqtt = { qos: opts.mqttQos ?? 0, retain: opts.mqttRetain };
+    }
+    warnings.push(...variableWarnings(varCtx));
+    return req;
+  }
+  function scanOptions(tokens, warnings) {
+    const o = {
+      data: [],
+      quote: [],
+      insecure: false,
+      ssl: false,
+      sslReqd: false,
+      listOnly: false,
+      ftpCreateDirs: false,
+      mailRcpt: [],
+      mailRcptAllowFails: false,
+      mqttRetain: false
+    };
+    const next = (i) => tokens[i + 1];
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      switch (t) {
+        case "-u":
+        case "--user":
+          o.user = next(i);
+          i++;
+          break;
+        case "-T":
+        case "--upload-file":
+          o.upload = next(i);
+          i++;
+          break;
+        case "-o":
+        case "--output":
+          o.output = next(i);
+          i++;
+          break;
+        case "-d":
+        case "--data":
+        case "--data-raw":
+        case "--data-binary":
+        case "--data-ascii": {
+          const v = next(i);
+          if (v !== void 0) o.data.push(v);
+          i++;
+          break;
+        }
+        case "-Q":
+        case "--quote": {
+          const v = next(i);
+          if (v !== void 0) o.quote.push(v);
+          i++;
+          break;
+        }
+        case "-r":
+        case "--range":
+          o.range = next(i);
+          i++;
+          break;
+        case "-m":
+        case "--max-time": {
+          const v = next(i);
+          if (v) o.maxTimeMs = Math.round(parseFloat(v) * 1e3);
+          i++;
+          break;
+        }
+        case "--connect-timeout": {
+          const v = next(i);
+          if (v) o.connectTimeoutMs = Math.round(parseFloat(v) * 1e3);
+          i++;
+          break;
+        }
+        case "-k":
+        case "--insecure":
+          o.insecure = true;
+          break;
+        case "--ssl":
+          o.ssl = true;
+          break;
+        case "--ssl-reqd":
+          o.sslReqd = true;
+          break;
+        case "-l":
+        case "--list-only":
+          o.listOnly = true;
+          break;
+        case "--ftp-create-dirs":
+          o.ftpCreateDirs = true;
+          break;
+        case "--mail-from":
+          o.mailFrom = next(i);
+          i++;
+          break;
+        case "--mail-rcpt": {
+          const v = next(i);
+          if (v !== void 0) o.mailRcpt.push(v);
+          i++;
+          break;
+        }
+        case "--mail-rcpt-allowfails":
+          o.mailRcptAllowFails = true;
+          break;
+        case "--retain":
+          o.mqttRetain = true;
+          break;
+        case "--qos": {
+          const v = next(i);
+          if (v) o.mqttQos = parseInt(v, 10);
+          i++;
+          break;
+        }
+        case "--url":
+          i++;
+          break;
+        // déjà pris en compte
+        default:
+          if (VALUE_OPTIONS.has(t)) i++;
+          break;
+      }
+    }
+    return o;
+  }
+  function resolvePayload(opts, scheme, direction) {
+    if (opts.upload !== void 0) {
+      return opts.upload.startsWith("@") ? { filePath: opts.upload.slice(1) } : { filePath: opts.upload };
+    }
+    if (opts.data.length > 0 && (direction === "send" || direction === "publish" || scheme === "tftp")) {
+      const joined = opts.data.map((d) => d.startsWith("@") ? `\0FILE\0${d.slice(1)}` : d).join("\n");
+      const fileMatch = /^\u0000FILE\u0000(.+)$/.exec(joined);
+      if (fileMatch) return { filePath: fileMatch[1] };
+      return { text: opts.data.join("") };
+    }
+    return void 0;
+  }
+  function dissectUrl(scheme, rawUrl) {
+    if (scheme === "file") {
+      const m2 = /^file:\/\/([^/]*)(\/.*)?$/.exec(rawUrl);
+      const host2 = m2?.[1] ?? "";
+      const path2 = m2?.[2] ?? (rawUrl.startsWith("file:") ? rawUrl.slice("file:".length) : rawUrl);
+      return { host: host2 === "localhost" ? "" : host2, path: path2 };
+    }
+    const m = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/]*)(\/.*)?$/.exec(rawUrl);
+    const authority = m?.[1] ?? "";
+    const path = m?.[2] ?? "";
+    let userinfo = "";
+    let hostport = authority;
+    const at = authority.lastIndexOf("@");
+    if (at !== -1) {
+      userinfo = authority.slice(0, at);
+      hostport = authority.slice(at + 1);
+    }
+    let host = hostport;
+    let port;
+    const v6 = /^\[([^\]]+)\](?::(\d+))?$/.exec(hostport);
+    if (v6) {
+      host = v6[1];
+      port = v6[2] ? parseInt(v6[2], 10) : void 0;
+    } else {
+      const colon = hostport.lastIndexOf(":");
+      if (colon !== -1 && /^\d+$/.test(hostport.slice(colon + 1))) {
+        host = hostport.slice(0, colon);
+        port = parseInt(hostport.slice(colon + 1), 10);
+      }
+    }
+    let userFromUrl;
+    let passFromUrl;
+    if (userinfo) {
+      const c = userinfo.indexOf(":");
+      userFromUrl = decodeURIComponent(c === -1 ? userinfo : userinfo.slice(0, c));
+      if (c !== -1) passFromUrl = decodeURIComponent(userinfo.slice(c + 1));
+    }
+    return { host, port, path, userFromUrl, passFromUrl };
+  }
+
+  // src/protocols/registry.ts
+  var registry = /* @__PURE__ */ new Map();
+  function registerProtocol(adapter) {
+    for (const scheme of adapter.schemes) registry.set(scheme, adapter);
+  }
+  function unregisterProtocol(scheme) {
+    registry.delete(scheme);
+  }
+  function getProtocolAdapter(scheme) {
+    return registry.get(scheme);
+  }
+  function registeredSchemes() {
+    return [...registry.keys()];
+  }
+  async function executeProtocol(req, ctx = {}) {
+    const adapter = registry.get(req.scheme);
+    if (!adapter) {
+      throw new Error(
+        `Aucun adaptateur enregistr\xE9 pour "${req.scheme}://". Appelez registerDefaultNodeAdapters() (Node) ou enregistrez un adaptateur pour ce sch\xE9ma.`
+      );
+    }
+    let signal = ctx.signal;
+    let timer;
+    if (!signal && req.timeoutMs) {
+      const controller = new AbortController();
+      timer = setTimeout(() => controller.abort(), req.timeoutMs);
+      signal = controller.signal;
+    }
+    try {
+      return await adapter.execute(req, { ...ctx, signal });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  // src/command.ts
+  function parseCommand(command, options = {}) {
+    const probe = parseProtocolCommand(command, options);
+    if (probe.isHttp) {
+      const { requests, warnings } = parseCurl(command, options);
+      return { kind: "http", requests, warnings };
+    }
+    return { kind: "protocol", scheme: probe.scheme, request: probe.request, warnings: probe.warnings };
+  }
+  async function run(command, options = {}) {
+    const parsed = parseCommand(command, options);
+    if (parsed.kind === "http") {
+      if (parsed.requests.length === 0) throw new Error("Aucune requ\xEAte HTTP \xE0 ex\xE9cuter.");
+      return { kind: "http", result: await execute(parsed.requests[0], options) };
+    }
+    if (!parsed.request) {
+      const blocker = parsed.warnings.find((w) => w.level === "error");
+      throw new Error(blocker?.message ?? `Commande "${parsed.scheme}://" non ex\xE9cutable.`);
+    }
+    return { kind: "protocol", result: await executeProtocol(parsed.request, options) };
+  }
+
+  // src/protocols/file.ts
+  async function defaultRead(path) {
+    const fs = await import("node:fs/promises");
+    return new Uint8Array(await fs.readFile(path));
+  }
+  async function defaultWrite(path, data) {
+    const fs = await import("node:fs/promises");
+    await fs.writeFile(path, data);
+  }
+  function toBytes(data) {
+    return typeof data === "string" ? new TextEncoder().encode(data) : data;
+  }
+  var fileAdapter = {
+    name: "file",
+    schemes: ["file"],
+    async execute(req, ctx) {
+      const issues = [];
+      const read = ctx.readFile ?? defaultRead;
+      const write = ctx.writeFile ?? defaultWrite;
+      if (req.direction === "upload") {
+        if (!req.payload) {
+          throw new Error("file:// en upload sans contenu (-T) : rien \xE0 \xE9crire.");
+        }
+        let data;
+        if (req.payload.filePath) {
+          data = toBytes(await read(req.payload.filePath));
+        } else {
+          data = toBytes(req.payload.text ?? "");
+        }
+        await write(req.path, data);
+        return {
+          scheme: "file",
+          ok: true,
+          summary: `${data.byteLength} octets \xE9crits dans ${req.path}`,
+          meta: { path: req.path, bytes: data.byteLength },
+          issues
+        };
+      }
+      let body;
+      try {
+        body = toBytes(await read(req.path));
+      } catch (e) {
+        throw new Error(`file:// lecture impossible de ${req.path} : ${e.message}`);
+      }
+      if (req.range) {
+        const sliced = applyRange(body, req.range, issues);
+        body = sliced;
+      }
+      if (req.output && req.output !== "-") {
+        await write(req.output, body);
+        issues.push(`Contenu \xE9crit dans ${req.output} (-o).`);
+      }
+      return {
+        scheme: "file",
+        ok: true,
+        summary: `${body.byteLength} octets lus depuis ${req.path}`,
+        body,
+        meta: { path: req.path, bytes: body.byteLength },
+        issues
+      };
+    }
+  };
+  function applyRange(body, range, issues) {
+    const m = /^(\d*)-(\d*)$/.exec(range.trim());
+    if (!m) {
+      issues.push(`Plage "${range}" ignor\xE9e (format attendu : d\xE9but-fin).`);
+      return body;
+    }
+    const hasStart = m[1] !== "";
+    const hasEnd = m[2] !== "";
+    if (hasStart && hasEnd) return body.subarray(parseInt(m[1], 10), parseInt(m[2], 10) + 1);
+    if (hasStart) return body.subarray(parseInt(m[1], 10));
+    if (hasEnd) return body.subarray(Math.max(0, body.byteLength - parseInt(m[2], 10)));
+    return body;
+  }
+
+  // src/protocols/smtp.ts
+  async function defaultFactory(req) {
+    const moduleName = "nodemailer";
+    const nodemailer = await import(
+      /* @vite-ignore */
+      moduleName
+    );
+    return nodemailer.createTransport({
+      host: req.host,
+      port: req.port,
+      secure: req.secure,
+      // smtps / port 465
+      requireTLS: req.tlsOpportunistic,
+      // --ssl-reqd / --ssl → STARTTLS
+      auth: req.username ? { user: req.username, pass: req.password ?? "" } : void 0,
+      tls: req.insecure ? { rejectUnauthorized: false } : void 0,
+      connectionTimeout: req.connectTimeoutMs ?? req.timeoutMs
+    });
+  }
+  async function readPayload(req, ctx) {
+    if (!req.payload) return "";
+    if (req.payload.filePath) {
+      if (!ctx.readFile) {
+        const fs = await import("node:fs/promises");
+        return new Uint8Array(await fs.readFile(req.payload.filePath));
+      }
+      return ctx.readFile(req.payload.filePath);
+    }
+    return req.payload.text ?? "";
+  }
+  var smtpAdapter = {
+    name: "smtp",
+    schemes: ["smtp", "smtps"],
+    async execute(req, ctx) {
+      const issues = [];
+      const recipients = req.smtp?.recipients ?? [];
+      if (recipients.length === 0) {
+        throw new Error("SMTP : aucun destinataire (--mail-rcpt) fourni.");
+      }
+      const raw = await readPayload(req, ctx);
+      if (!raw || typeof raw === "string" && raw.trim() === "") {
+        issues.push("Corps du mail vide : fournissez -T message.txt ou -d.");
+      }
+      const factory = ctx.clientFactory ?? defaultFactory;
+      const transport = await factory(req);
+      const info = await transport.sendMail({
+        envelope: { from: req.smtp?.from, to: recipients },
+        raw
+      });
+      const rejected = info.rejected ?? [];
+      if (rejected.length > 0 && !req.smtp?.allowRcptFailures) {
+        issues.push(`Destinataires rejet\xE9s : ${rejected.join(", ")}`);
+      }
+      return {
+        scheme: req.scheme,
+        ok: rejected.length === 0 || !!req.smtp?.allowRcptFailures,
+        summary: info.response ?? `Mail envoy\xE9 \xE0 ${(info.accepted ?? recipients).join(", ")}`,
+        meta: {
+          from: req.smtp?.from,
+          accepted: info.accepted ?? recipients,
+          rejected,
+          messageId: info.messageId
+        },
+        issues
+      };
+    }
+  };
+
+  // src/protocols/ftp.ts
+  async function defaultFactory2() {
+    const moduleName = "basic-ftp";
+    const ftp = await import(
+      /* @vite-ignore */
+      moduleName
+    );
+    return new ftp.Client();
+  }
+  async function readBytes(req, ctx) {
+    const p = req.payload;
+    if (!p) return new Uint8Array();
+    if (p.filePath) {
+      if (ctx.readFile) {
+        const data = await ctx.readFile(p.filePath);
+        return typeof data === "string" ? new TextEncoder().encode(data) : data;
+      }
+      const fs = await import("node:fs/promises");
+      return new Uint8Array(await fs.readFile(p.filePath));
+    }
+    return new TextEncoder().encode(p.text ?? "");
+  }
+  var ftpAdapter = {
+    name: "ftp",
+    schemes: ["ftp", "ftps"],
+    async execute(req, ctx) {
+      const issues = [];
+      const factory = ctx.clientFactory ?? defaultFactory2;
+      const client = await factory();
+      try {
+        await client.access({
+          host: req.host,
+          port: req.port,
+          user: req.username,
+          password: req.password,
+          secure: req.scheme === "ftps" ? "implicit" : req.tlsOpportunistic ? true : false,
+          secureOptions: req.insecure ? { rejectUnauthorized: false } : void 0
+        });
+        const quoteResults = [];
+        for (const command of req.ftp?.quote ?? []) {
+          const res = await client.send(command);
+          quoteResults.push({ command, code: res.code, message: res.message });
+        }
+        if (req.direction === "list") {
+          const entries = await client.list(req.path || void 0);
+          const names = entries.map((e) => e.name);
+          return {
+            scheme: req.scheme,
+            ok: true,
+            summary: `${entries.length} entr\xE9e(s) list\xE9e(s)`,
+            body: new TextEncoder().encode(names.join("\n")),
+            meta: { entries, quote: quoteResults },
+            issues
+          };
+        }
+        if (req.direction === "upload") {
+          if (req.ftp?.createDirs && client.ensureDir) {
+            const dir = req.path.slice(0, req.path.lastIndexOf("/"));
+            if (dir) await client.ensureDir(dir);
+          }
+          const bytes = await readBytes(req, ctx);
+          await client.uploadFrom(await toReadable(bytes), req.path);
+          return {
+            scheme: req.scheme,
+            ok: true,
+            summary: `${bytes.byteLength} octets t\xE9l\xE9vers\xE9s vers ${req.path}`,
+            meta: { path: req.path, bytes: bytes.byteLength, quote: quoteResults },
+            issues
+          };
+        }
+        const sink = await createByteSink();
+        await client.downloadTo(sink.writable, req.path);
+        const body = sink.collect();
+        if (req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+        return {
+          scheme: req.scheme,
+          ok: true,
+          summary: `${body.byteLength} octets r\xE9cup\xE9r\xE9s depuis ${req.path}`,
+          body,
+          meta: { path: req.path, bytes: body.byteLength, quote: quoteResults },
+          issues
+        };
+      } finally {
+        client.close();
+      }
+    }
+  };
+  async function toReadable(bytes) {
+    const { Readable } = await import("node:stream");
+    return Readable.from(Buffer.from(bytes));
+  }
+  async function createByteSink() {
+    const { PassThrough } = await import("node:stream");
+    const chunks = [];
+    const pass = new PassThrough();
+    pass.on("data", (c) => chunks.push(c));
+    return { writable: pass, collect: () => new Uint8Array(Buffer.concat(chunks)) };
+  }
+
+  // src/protocols/sftp.ts
+  async function defaultFactory3() {
+    const moduleName = "ssh2";
+    const ssh2 = await import(
+      /* @vite-ignore */
+      moduleName
+    );
+    const conn = new ssh2.Client();
+    let sftp;
+    return {
+      connect(opts) {
+        return new Promise((resolve, reject) => {
+          conn.on("ready", () => {
+            conn.sftp((err, s) => {
+              if (err) return reject(err);
+              sftp = s;
+              resolve();
+            });
+          }).on("error", reject).connect(opts);
+        });
+      },
+      get(remotePath) {
+        return new Promise((resolve, reject) => {
+          const chunks = [];
+          const stream = sftp.createReadStream(remotePath);
+          stream.on("data", (c) => chunks.push(c));
+          stream.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
+          stream.on("error", reject);
+        });
+      },
+      put(data, remotePath) {
+        return new Promise((resolve, reject) => {
+          const stream = sftp.createWriteStream(remotePath);
+          stream.on("close", () => resolve());
+          stream.on("error", reject);
+          stream.end(Buffer.from(data));
+        });
+      },
+      list(path) {
+        return new Promise((resolve, reject) => {
+          sftp.readdir(path || ".", (err, entries) => {
+            if (err) return reject(err);
+            resolve(entries.map((e) => ({ filename: e.filename, size: e.attrs?.size })));
+          });
+        });
+      },
+      end() {
+        conn.end();
+      }
+    };
+  }
+  async function readBytes2(req, ctx) {
+    const p = req.payload;
+    if (!p) return new Uint8Array();
+    if (p.filePath) {
+      if (ctx.readFile) {
+        const d = await ctx.readFile(p.filePath);
+        return typeof d === "string" ? new TextEncoder().encode(d) : d;
+      }
+      const fs = await import("node:fs/promises");
+      return new Uint8Array(await fs.readFile(p.filePath));
+    }
+    return new TextEncoder().encode(p.text ?? "");
+  }
+  var sftpAdapter = {
+    name: "sftp",
+    schemes: ["sftp"],
+    async execute(req, ctx) {
+      const issues = [];
+      const factory = ctx.clientFactory ?? defaultFactory3;
+      const client = await factory();
+      try {
+        await client.connect({
+          host: req.host,
+          port: req.port,
+          username: req.username,
+          password: req.password,
+          readyTimeout: req.connectTimeoutMs ?? req.timeoutMs
+        });
+        if (req.direction === "list") {
+          const entries = await client.list(req.path);
+          return {
+            scheme: "sftp",
+            ok: true,
+            summary: `${entries.length} entr\xE9e(s) list\xE9e(s)`,
+            body: new TextEncoder().encode(entries.map((e) => e.filename).join("\n")),
+            meta: { entries },
+            issues
+          };
+        }
+        if (req.direction === "upload") {
+          const bytes = await readBytes2(req, ctx);
+          await client.put(bytes, req.path);
+          return {
+            scheme: "sftp",
+            ok: true,
+            summary: `${bytes.byteLength} octets t\xE9l\xE9vers\xE9s vers ${req.path}`,
+            meta: { path: req.path, bytes: bytes.byteLength },
+            issues
+          };
+        }
+        const body = await client.get(req.path);
+        if (req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+        return {
+          scheme: "sftp",
+          ok: true,
+          summary: `${body.byteLength} octets r\xE9cup\xE9r\xE9s depuis ${req.path}`,
+          body,
+          meta: { path: req.path, bytes: body.byteLength },
+          issues
+        };
+      } finally {
+        client.end();
+      }
+    }
+  };
+
+  // src/protocols/pop3.ts
+  var pop3Adapter = {
+    name: "pop3",
+    schemes: ["pop3", "pop3s"],
+    async execute(req, ctx) {
+      const issues = [];
+      const factory = ctx.clientFactory ?? (() => createSocketPop3Client());
+      const client = await factory();
+      try {
+        await client.connect({
+          host: req.host,
+          port: req.port,
+          secure: req.secure,
+          insecure: req.insecure,
+          timeoutMs: req.connectTimeoutMs ?? req.timeoutMs
+        });
+        if (req.username) await client.login(req.username, req.password ?? "");
+        const msgNum = /^\/?(\d+)$/.exec(req.path.replace(/^\//, ""))?.[1];
+        if (msgNum) {
+          const message = await client.retrieve(parseInt(msgNum, 10));
+          const body = new TextEncoder().encode(message);
+          if (req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+          return {
+            scheme: req.scheme,
+            ok: true,
+            summary: `Message ${msgNum} r\xE9cup\xE9r\xE9 (${body.byteLength} octets)`,
+            body,
+            meta: { message: Number(msgNum), bytes: body.byteLength },
+            issues
+          };
+        }
+        const list = await client.list();
+        return {
+          scheme: req.scheme,
+          ok: true,
+          summary: "Liste des messages r\xE9cup\xE9r\xE9e",
+          body: new TextEncoder().encode(list),
+          meta: { list },
+          issues
+        };
+      } finally {
+        await client.quit().catch(() => {
+        });
+      }
+    }
+  };
+  async function createSocketPop3Client() {
+    const net = await import("node:net");
+    const tls = await import("node:tls");
+    let socket;
+    let buffer = "";
+    const waiters = [];
+    const onData = (chunk) => {
+      buffer += chunk.toString("utf8");
+      while (waiters.length > 0) {
+        const w = waiters[0];
+        const end = w.multiline ? findMultilineEnd(buffer) : buffer.indexOf("\r\n");
+        if (end === -1) break;
+        const resp = buffer.slice(0, end);
+        buffer = buffer.slice(w.multiline ? end + 5 : end + 2);
+        waiters.shift();
+        if (!w.multiline && resp.startsWith("-ERR")) w.reject(new Error(resp));
+        else if (w.multiline && resp.startsWith("-ERR")) w.reject(new Error(resp));
+        else w.resolve(resp);
+      }
+    };
+    const expect = (multiline) => new Promise((resolve, reject) => {
+      waiters.push({ multiline, resolve, reject });
+    });
+    const send = (line, multiline = false) => {
+      socket.write(line + "\r\n");
+      return expect(multiline);
+    };
+    return {
+      connect(opts) {
+        return new Promise((resolve, reject) => {
+          const onError = (e) => reject(e);
+          if (opts.secure) {
+            socket = tls.connect(
+              { host: opts.host, port: opts.port, rejectUnauthorized: !opts.insecure },
+              () => {
+              }
+            );
+          } else {
+            socket = net.connect({ host: opts.host, port: opts.port });
+          }
+          if (opts.timeoutMs) socket.setTimeout(opts.timeoutMs, () => socket.destroy(new Error("timeout POP3")));
+          socket.on("data", onData);
+          socket.on("error", onError);
+          expect(false).then(resolve, reject);
+        });
+      },
+      async login(user, pass) {
+        await send(`USER ${user}`);
+        return send(`PASS ${pass}`);
+      },
+      list() {
+        return send("LIST", true);
+      },
+      retrieve(msg) {
+        return send(`RETR ${msg}`, true);
+      },
+      async quit() {
+        try {
+          await send("QUIT");
+        } finally {
+          socket?.end();
+        }
+      }
+    };
+  }
+  function findMultilineEnd(buf) {
+    const idx = buf.indexOf("\r\n.\r\n");
+    return idx;
+  }
+
+  // src/protocols/mqtt.ts
+  async function defaultFactory4() {
+    const moduleName = "mqtt";
+    const mqtt = await import(
+      /* @vite-ignore */
+      moduleName
+    );
+    let client;
+    return {
+      connect(opts) {
+        return new Promise((resolve, reject) => {
+          client = mqtt.connect(opts.url, {
+            username: opts.username,
+            password: opts.password,
+            rejectUnauthorized: opts.rejectUnauthorized,
+            connectTimeout: opts.connectTimeoutMs ?? 3e4
+          });
+          client.on("connect", () => resolve());
+          client.on("error", reject);
+        });
+      },
+      publish(topic, payload, opts) {
+        return new Promise((resolve, reject) => {
+          client.publish(topic, Buffer.from(payload), opts, (err) => err ? reject(err) : resolve());
+        });
+      },
+      subscribeOne(topic, qos, timeoutMs) {
+        return new Promise((resolve, reject) => {
+          const timer = timeoutMs ? setTimeout(() => reject(new Error(`Aucun message MQTT re\xE7u sur "${topic}" dans le d\xE9lai imparti.`)), timeoutMs) : void 0;
+          client.on("message", (_t, payload) => {
+            if (timer) clearTimeout(timer);
+            resolve(new Uint8Array(payload));
+          });
+          client.subscribe(topic, { qos }, (err) => {
+            if (err) {
+              if (timer) clearTimeout(timer);
+              reject(err);
+            }
+          });
+        });
+      },
+      end() {
+        client?.end();
+      }
+    };
+  }
+  var mqttAdapter = {
+    name: "mqtt",
+    schemes: ["mqtt", "mqtts"],
+    async execute(req, ctx) {
+      const issues = [];
+      const topic = req.path.replace(/^\//, "");
+      if (!topic) throw new Error("MQTT : aucun topic dans l'URL (mqtt://courtier/mon/topic).");
+      const factory = ctx.clientFactory ?? defaultFactory4;
+      const client = await factory();
+      try {
+        await client.connect({
+          url: `${req.scheme}://${req.host}:${req.port}`,
+          username: req.username,
+          password: req.password,
+          rejectUnauthorized: !req.insecure,
+          connectTimeoutMs: req.connectTimeoutMs ?? req.timeoutMs
+        });
+        if (req.direction === "publish") {
+          const payload = req.payload?.text ? new TextEncoder().encode(req.payload.text) : new Uint8Array();
+          await client.publish(topic, payload, { qos: req.mqtt?.qos ?? 0, retain: req.mqtt?.retain ?? false });
+          return {
+            scheme: req.scheme,
+            ok: true,
+            summary: `Message publi\xE9 sur "${topic}" (${payload.byteLength} octets)`,
+            meta: { topic, bytes: payload.byteLength, qos: req.mqtt?.qos ?? 0, retain: req.mqtt?.retain ?? false },
+            issues
+          };
+        }
+        issues.push("Abonnement : le SDK lit le premier message re\xE7u puis se d\xE9connecte.");
+        const body = await client.subscribeOne(topic, req.mqtt?.qos ?? 0, req.timeoutMs ?? 3e4);
+        if (req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+        return {
+          scheme: req.scheme,
+          ok: true,
+          summary: `Message re\xE7u sur "${topic}" (${body.byteLength} octets)`,
+          body,
+          meta: { topic, bytes: body.byteLength },
+          issues
+        };
+      } finally {
+        client.end();
+      }
+    }
+  };
+
+  // src/protocols/tftp.ts
+  var BLOCK_SIZE = 512;
+  var OP_RRQ = 1;
+  var OP_WRQ = 2;
+  var OP_DATA = 3;
+  var OP_ACK = 4;
+  var OP_ERROR = 5;
+  async function readBytes3(req, ctx) {
+    const p = req.payload;
+    if (!p) return new Uint8Array();
+    if (p.filePath) {
+      if (ctx.readFile) {
+        const d = await ctx.readFile(p.filePath);
+        return typeof d === "string" ? new TextEncoder().encode(d) : d;
+      }
+      const fs = await import("node:fs/promises");
+      return new Uint8Array(await fs.readFile(p.filePath));
+    }
+    return new TextEncoder().encode(p.text ?? "");
+  }
+  var tftpAdapter = {
+    name: "tftp",
+    schemes: ["tftp"],
+    async execute(req, ctx) {
+      const issues = [];
+      const filename = req.path.replace(/^\//, "");
+      if (!filename) throw new Error("TFTP : aucun nom de fichier dans l'URL.");
+      const timeoutMs = req.timeoutMs ?? 1e4;
+      const factory = ctx.clientFactory ?? (() => createDgramTftpClient());
+      const client = await factory();
+      if (req.direction === "upload") {
+        const bytes = await readBytes3(req, ctx);
+        const sent = await client.upload(bytes, { host: req.host, port: req.port, filename, timeoutMs });
+        return {
+          scheme: "tftp",
+          ok: true,
+          summary: `${sent} octets envoy\xE9s vers ${filename}`,
+          meta: { filename, bytes: sent },
+          issues
+        };
+      }
+      const body = await client.download({ host: req.host, port: req.port, filename, timeoutMs });
+      if (req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+      return {
+        scheme: "tftp",
+        ok: true,
+        summary: `${body.byteLength} octets r\xE9cup\xE9r\xE9s depuis ${filename}`,
+        body,
+        meta: { filename, bytes: body.byteLength },
+        issues
+      };
+    }
+  };
+  function requestPacket(opcode, filename) {
+    return Buffer.concat([
+      Buffer.from([0, opcode]),
+      Buffer.from(filename, "ascii"),
+      Buffer.from([0]),
+      Buffer.from("octet", "ascii"),
+      Buffer.from([0])
+    ]);
+  }
+  function ackPacket(block) {
+    const b = Buffer.alloc(4);
+    b.writeUInt16BE(OP_ACK, 0);
+    b.writeUInt16BE(block, 2);
+    return b;
+  }
+  function dataPacket(block, chunk) {
+    const header = Buffer.alloc(4);
+    header.writeUInt16BE(OP_DATA, 0);
+    header.writeUInt16BE(block, 2);
+    return Buffer.concat([header, Buffer.from(chunk)]);
+  }
+  function tftpError(msg) {
+    const code = msg.readUInt16BE(2);
+    const text = msg.subarray(4, msg.indexOf(0, 4)).toString("ascii");
+    return `erreur TFTP ${code} : ${text}`;
+  }
+  async function createDgramTftpClient() {
+    const dgram = await import("node:dgram");
+    function run2(build, handle, timeoutMs, host, port) {
+      return new Promise((resolve, reject) => {
+        const socket = dgram.createSocket("udp4");
+        let serverTid = 0;
+        const timer = setTimeout(() => {
+          socket.close();
+          reject(new Error("timeout TFTP"));
+        }, timeoutMs);
+        const done = (r) => {
+          clearTimeout(timer);
+          socket.close();
+          resolve(r);
+        };
+        const fail = (e) => {
+          clearTimeout(timer);
+          socket.close();
+          reject(e);
+        };
+        socket.on("error", fail);
+        socket.on("message", (msg, rinfo) => {
+          if (msg.readUInt16BE(0) === OP_ERROR) return fail(new Error(tftpError(msg)));
+          if (serverTid === 0) serverTid = rinfo.port;
+          handle(socket, msg, rinfo, done, fail);
+        });
+        socket.send(build(), port, host);
+      });
+    }
+    return {
+      download(opts) {
+        const chunks = [];
+        let expected = 1;
+        return run2(
+          () => requestPacket(OP_RRQ, opts.filename),
+          (socket, msg, rinfo, done) => {
+            if (msg.readUInt16BE(0) !== OP_DATA) return;
+            const block = msg.readUInt16BE(2);
+            if (block === expected) {
+              const data = msg.subarray(4);
+              chunks.push(data);
+              socket.send(ackPacket(block), rinfo.port, rinfo.address);
+              expected++;
+              if (data.byteLength < BLOCK_SIZE) done(new Uint8Array(Buffer.concat(chunks)));
+            }
+          },
+          opts.timeoutMs,
+          opts.host,
+          opts.port
+        );
+      },
+      upload(data, opts) {
+        const total = data.byteLength;
+        const totalBlocks = Math.floor(total / BLOCK_SIZE) + 1;
+        let lastSent = 0;
+        return run2(
+          () => requestPacket(OP_WRQ, opts.filename),
+          (socket, msg, rinfo, done) => {
+            if (msg.readUInt16BE(0) !== OP_ACK) return;
+            const acked = msg.readUInt16BE(2);
+            if (acked !== lastSent) return;
+            if (acked === totalBlocks) return done(total);
+            const nextBlock = acked + 1;
+            const start = (nextBlock - 1) * BLOCK_SIZE;
+            socket.send(dataPacket(nextBlock, data.subarray(start, start + BLOCK_SIZE)), rinfo.port, rinfo.address);
+            lastSent = nextBlock;
+          },
+          opts.timeoutMs,
+          opts.host,
+          opts.port
+        );
+      }
+    };
+  }
+
+  // src/protocols/smb.ts
+  async function defaultFactory5(coords) {
+    const moduleName = "@marsaud/smb2";
+    const SMB2 = (await import(
+      /* @vite-ignore */
+      moduleName
+    )).default;
+    const smb = new SMB2({
+      share: `\\\\${coords.server}\\${coords.share}`,
+      domain: coords.domain ?? "WORKGROUP",
+      username: coords.username ?? "guest",
+      password: coords.password ?? "",
+      port: coords.port
+    });
+    const toWin = (p) => p.replace(/\//g, "\\").replace(/^\\+/, "");
+    return {
+      readFile: (path) => new Promise((res, rej) => smb.readFile(toWin(path), (e, d) => e ? rej(e) : res(new Uint8Array(d)))),
+      writeFile: (path, data) => new Promise((res, rej) => smb.writeFile(toWin(path), Buffer.from(data), (e) => e ? rej(e) : res())),
+      readdir: (path) => new Promise((res, rej) => smb.readdir(toWin(path) || "", (e, l) => e ? rej(e) : res(l))),
+      disconnect: () => smb.disconnect()
+    };
+  }
+  function splitSharePath(path) {
+    const clean = path.replace(/^\//, "");
+    const slash = clean.indexOf("/");
+    if (slash === -1) return { share: clean, filePath: "" };
+    return { share: clean.slice(0, slash), filePath: clean.slice(slash + 1) };
+  }
+  var smbAdapter = {
+    name: "smb",
+    schemes: ["smb", "smbs"],
+    async execute(req, ctx) {
+      const issues = [];
+      const { share, filePath } = splitSharePath(req.path);
+      if (!share) throw new Error("SMB : URL sans partage (smb://serveur/partage/fichier).");
+      const [domain, user] = (req.username ?? "").includes("\\") ? (req.username ?? "").split("\\") : [void 0, req.username];
+      const factory = ctx.clientFactory ?? defaultFactory5;
+      const client = await factory({
+        server: req.host,
+        port: req.port,
+        share,
+        username: user,
+        password: req.password,
+        domain
+      });
+      try {
+        if (req.direction === "list") {
+          const names = await client.readdir(filePath);
+          return {
+            scheme: req.scheme,
+            ok: true,
+            summary: `${names.length} entr\xE9e(s) dans ${share}/${filePath}`,
+            body: new TextEncoder().encode(names.join("\n")),
+            meta: { share, path: filePath, entries: names },
+            issues
+          };
+        }
+        if (req.direction === "upload") {
+          let data;
+          if (req.payload?.filePath) {
+            const d = ctx.readFile ? await ctx.readFile(req.payload.filePath) : new Uint8Array(await (await import("node:fs/promises")).readFile(req.payload.filePath));
+            data = typeof d === "string" ? new TextEncoder().encode(d) : d;
+          } else {
+            data = new TextEncoder().encode(req.payload?.text ?? "");
+          }
+          await client.writeFile(filePath, data);
+          return {
+            scheme: req.scheme,
+            ok: true,
+            summary: `${data.byteLength} octets \xE9crits dans ${share}/${filePath}`,
+            meta: { share, path: filePath, bytes: data.byteLength },
+            issues
+          };
+        }
+        const body = await client.readFile(filePath);
+        if (req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+        return {
+          scheme: req.scheme,
+          ok: true,
+          summary: `${body.byteLength} octets r\xE9cup\xE9r\xE9s depuis ${share}/${filePath}`,
+          body,
+          meta: { share, path: filePath, bytes: body.byteLength },
+          issues
+        };
+      } finally {
+        client.disconnect();
+      }
+    }
+  };
+
+  // src/protocols/index.ts
+  function registerDefaultNodeAdapters() {
+    for (const adapter of [fileAdapter, smtpAdapter, ftpAdapter, sftpAdapter, pop3Adapter, mqttAdapter, tftpAdapter, smbAdapter]) {
+      registerProtocol(adapter);
+    }
   }
   return __toCommonJS(index_exports);
 })();

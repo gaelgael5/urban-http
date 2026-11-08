@@ -17,31 +17,32 @@ et signalé par un warning à code stable**, jamais ignoré en silence.
 
 ## 1. Protocoles
 
-C'est ici que l'écart avec curl est le plus net : `fetch` ne parle que HTTP(S).
-Une URL d'un autre protocole produit le warning **`unsupported-protocol`**
-(niveau `error`) avec une suggestion d'alternative applicative.
+Le cœur HTTP passe par `fetch`. Les autres protocoles sont désormais couverts
+par des **adaptateurs Node optionnels** (voir [protocols.md](protocols.md)) :
+le SDK les analyse en requête structurée et les exécute via une bibliothèque
+éprouvée. Les protocoles sans adaptateur produisent toujours le warning
+**`unsupported-protocol`** avec une alternative suggérée.
 
-| Protocole | Ce que curl en fait | Statut | Alternative applicative suggérée |
+| Protocole | Ce que curl en fait | Statut | Moteur |
 |---|---|---|---|
-| **HTTP / HTTPS** | le cœur | ✅ cœur du SDK | — |
-| **WS / WSS** | WebSocket | ❌ | API `WebSocket` (navigateur et Node ≥ 22) |
-| **SMTP / SMTPS** | envoi de mails (`--mail-from`, `--mail-rcpt`, corps via `-T`) | ❌ | nodemailer |
-| **IMAP(S) / POP3(S)** | lecture de boîtes mail | ❌ | imapflow… |
-| **FTP / FTPS** | transfert de fichiers (`-Q`, `-P`, `--ftp-*`, `-l`) | ❌ | basic-ftp… |
-| **SFTP / SCP** | transfert via SSH | ❌ | ssh2 |
-| **LDAP(S)** | annuaire | ❌ | ldapts… |
-| **MQTT** | pub/sub IoT | ❌ | mqtt.js |
-| **TELNET** | session interactive | ❌ | — |
-| **TFTP** | transfert UDP | ❌ | — |
-| **DICT** | dictionnaires | ❌ | — |
-| **FILE** | lecture de fichier local | ❌ | `fs` côté Node |
-| **GOPHER(S), RTSP, SMB(S), RTMP** | divers | ❌ | — |
+| **HTTP / HTTPS** | le cœur | ✅ | fetch |
+| **SMTP / SMTPS** | envoi de mails (`--mail-from`, `--mail-rcpt`, corps via `-T`) | ✅ | nodemailer |
+| **FTP / FTPS** | transfert de fichiers (`-Q`, `--ftp-create-dirs`, `-l`) | ✅ | basic-ftp |
+| **SFTP** | transfert via SSH | ✅ | ssh2 |
+| **POP3 / POP3S** | lecture de boîte mail (liste, RETR n) | ✅ | node:net / node:tls |
+| **MQTT / MQTTS** | publier / lire un message | ✅ | mqtt.js |
+| **TFTP** | transfert UDP par blocs | ✅ | node:dgram |
+| **FILE** | lecture/écriture de fichier local | ✅ | node:fs |
+| **SMB / SMBS** | partage de fichiers | ✅ | @marsaud/smb2 |
+| **WS / WSS** | WebSocket | ❌ | API `WebSocket` |
+| **IMAP(S)** | lecture de boîte mail | ❌ | imapflow… |
+| **SCP** | copie via SSH | ❌ | ssh2 (manuel) |
+| **LDAP(S), TELNET, DICT, GOPHER(S), RTSP, RTMP** | divers | ❌ | — |
 
-Les options propres à ces protocoles sont **reconnues** (pas de faux
-« option inconnue ») et signalées par **`unsupported-protocol-option`** :
-`--mail-from`, `--mail-rcpt`, `--mail-auth`, `-Q/--quote`, `-P/--ftp-port`,
-`--ftp-create-dirs`, `--ftp-method`, `--ftp-pasv`, `-l/--list-only`,
-`-t/--telnet-option`, `--tftp-blksize`, `--ssl`, `--ssl-reqd`, `--crlf`.
+Les options propres aux protocoles couverts sont interprétées (`--mail-from`,
+`--mail-rcpt`, `-Q/--quote`, `-l/--list-only`, `--ssl`, `--ssl-reqd`, `-T`,
+`-o`…). Celles des protocoles encore hors périmètre (`-t/--telnet-option`…)
+restent signalées par `unsupported-protocol-option`.
 
 ## 2. Construction de la requête HTTP
 
@@ -158,11 +159,12 @@ quelle : `-o`, `-O`, `-J`, `-D`, `-i`, `-s`, `-S`, `-v`, `-#`, `-w/--write-out`,
 - **Tout le périmètre « appel HTTP applicatif » de curl est couvert** : requête,
   corps, auth (Basic/Bearer/Digest), cookies, variables, redirections, retries,
   timeout, globbing, multipart — plus l'import Postman.
-- **Hors HTTP (mails SMTP, FTP, WebSocket, IMAP…), le SDK ne fait pas le travail
-  de curl**, par conception : `fetch` ne parle pas ces protocoles. En revanche il
-  les **reconnaît**, produit un warning `unsupported-protocol` /
-  `unsupported-protocol-option` explicite et suggère la bibliothèque applicative
-  adaptée — l'application peut router ces cas vers le bon outil.
-- Les quelques fonctions HTTP restantes non couvertes (auth-int, certificats
-  clients, SOCKS, conditionnelles `-z`) sont listées dans la
+- **Les principaux protocoles non-HTTP sont couverts** par des adaptateurs Node
+  optionnels (SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB) — voir
+  [protocols.md](protocols.md). Le cœur reste compartimenté : ces adaptateurs ne
+  sont chargés qu'à l'usage, et le navigateur n'exécute que HTTP.
+- **Restent hors périmètre** WebSocket (→ API native), IMAP, LDAP, TELNET,
+  DICT, GOPHER, RTSP… : signalés par `unsupported-protocol` avec une alternative.
+- Quelques fonctions HTTP non couvertes (auth-int, certificats clients, SOCKS,
+  conditionnelles `-z`) sont listées dans la
   [feuille de route](../README.md#feuille-de-route) ou signalées par warning.

@@ -301,7 +301,7 @@ footer.site a { color: var(--accent); }
 
 <header class="site">
   <div class="brand"><span class="dollar">$</span> urban-http</div>
-  <div class="tagline">Collez une commande curl, un export « Copy as cURL » ou une collection Postman v2.1 (JSON) — le SDK la transforme en appels HTTP exécutables.</div>
+  <div class="tagline">Collez une commande curl, un export « Copy as cURL » ou une collection Postman v2.1 (JSON) — le SDK la transforme en appels exécutables. HTTP via fetch ; SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB via des adaptateurs Node.</div>
 </header>
 
 <div class="layout">
@@ -347,7 +347,7 @@ TOKEN=TOKEN_DEMO</textarea>
     </section>
 
     <section class="panel">
-      <div class="panel-h">Code fetch généré</div>
+      <div class="panel-h">Code généré</div>
       <div class="panel-b"><pre class="code" id="fetch-code"></pre></div>
     </section>
 
@@ -367,7 +367,7 @@ TOKEN=TOKEN_DEMO</textarea>
 <script>
 (function () {
   "use strict";
-  const { parseCurl, parsePostman, toFetch, toFetchCode, execute } = window.UrbanHttp;
+  const { parseCurl, parsePostman, parseCommand, toFetch, toFetchCode, execute } = window.UrbanHttp;
 
   /* Collection Postman d'exemple (sérialisée dans les exemples ci-dessous) */
   const POSTMAN_SAMPLE = {
@@ -473,10 +473,20 @@ TOKEN=TOKEN_DEMO</textarea>
       { label: "Collection v2.1 (3 requêtes)", cmd: JSON.stringify(POSTMAN_SAMPLE, null, 2) },
       { label: "Variables non résolues", cmd: JSON.stringify(POSTMAN_UNRESOLVED, null, 2), warn: true },
     ]},
-    { group: "Hors HTTP : signalé", items: [
-      { label: "Envoi de mail (SMTP)", cmd: `curl smtp://mail.example.com --mail-from moi@example.com --mail-rcpt toi@example.com -T message.txt`, warn: true },
+    { group: "Autres protocoles", items: [
+      { label: "Envoi de mail (SMTP)", cmd: `curl smtp://mail.example.com --mail-from moi@example.com --mail-rcpt toi@example.com -T message.txt` },
+      { label: "Téléversement FTP", cmd: `curl -T rapport.pdf ftp://bob:secret@ftp.example.com/incoming/` },
+      { label: "Listage FTPS", cmd: `curl -l -Q "CWD /pub" ftps://ftp.example.com/` },
+      { label: "Téléchargement SFTP", cmd: `curl sftp://alice@serveur.example.com/home/alice/data.csv` },
+      { label: "Lecture POP3", cmd: `curl pop3://user:pass@mail.example.com/1` },
+      { label: "Publication MQTT", cmd: `curl mqtt://courtier.example.com/capteurs/temp -d "21.5" --qos 1 --retain` },
+      { label: "TFTP (firmware)", cmd: `curl tftp://10.0.0.1/firmware.bin` },
+      { label: "Fichier local (file://)", cmd: `curl file:///etc/hostname` },
+      { label: "Partage SMB", cmd: `curl smb://serveur.example.com/partage/dossier/rapport.xlsx` },
+    ]},
+    { group: "Sans adaptateur : signalé", items: [
       { label: "WebSocket (ws://)", cmd: `curl ws://echo.example.com/socket`, warn: true },
-      { label: "Transfert FTP", cmd: `curl -Q "DELE vieux.txt" ftp://ftp.example.com/fichier.txt`, warn: true },
+      { label: "IMAP", cmd: `curl imaps://mail.example.com/INBOX`, warn: true },
     ]},
     { group: "Limites signalées", items: [
       { label: "Certificat client (--cert)", cmd: `curl --cert client.pem --key client.key https://httpbin.org/get`, warn: true },
@@ -493,6 +503,7 @@ TOKEN=TOKEN_DEMO</textarea>
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   let currentResult = null;
+  let currentProtocol = null;
   let currentIndex = 0;
 
   function methodClass(m) {
@@ -520,24 +531,83 @@ TOKEN=TOKEN_DEMO</textarea>
 
   function run() {
     $("resp-panel").hidden = true;
-    let result;
+    const input = $("cmd").value;
+    const variables = currentVariables();
     try {
-      const input = $("cmd").value;
-      const variables = currentVariables();
-      // Un JSON collé = collection Postman ; sinon, commande curl
-      result = input.trim().startsWith("{") ? parsePostman(input, { variables }) : parseCurl(input, { variables });
+      // Un JSON collé = collection Postman
+      if (input.trim().startsWith("{")) {
+        currentProtocol = null;
+        currentResult = parsePostman(input, { variables });
+      } else {
+        // Commande curl : détecter le protocole (HTTP ou autre)
+        const parsed = parseCommand(input, { variables });
+        if (parsed.kind === "protocol") {
+          currentResult = null;
+          currentProtocol = parsed;
+          renderProtocol(parsed);
+          return;
+        }
+        currentProtocol = null;
+        currentResult = { requests: parsed.requests, warnings: parsed.warnings };
+      }
     } catch (e) {
       currentResult = null;
+      currentProtocol = null;
       $("parsed").innerHTML = `<p style="color: var(--err)">Erreur du parser : ${esc(e.message)}</p>`;
       $("fetch-code").textContent = "";
       $("warn-panel").hidden = true;
       renderTabs();
       return;
     }
-    currentResult = result;
-    currentIndex = Math.min(currentIndex, Math.max(0, result.requests.length - 1));
+    currentIndex = Math.min(currentIndex, Math.max(0, currentResult.requests.length - 1));
     renderTabs();
     renderParsed();
+  }
+
+  /** Rendu d'une commande protocolaire non-HTTP (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB). */
+  function renderProtocol(parsed) {
+    $("req-tabs").innerHTML = "";
+    const r = parsed.request;
+    const container = $("parsed");
+
+    if (!r) {
+      container.innerHTML = `<span class="badge other">${esc(parsed.scheme || "?")}</span>
+        <p class="muted" style="margin-top:10px">Protocole sans adaptateur dans le SDK.</p>`;
+      $("fetch-code").textContent = "// Protocole non pris en charge";
+      const ws = parsed.warnings || [];
+      $("warn-panel").hidden = ws.length === 0;
+      $("warnings").innerHTML = ws.map((w) => `<li class="${esc(w.level)}">${esc(w.message)}</li>`).join("");
+      return;
+    }
+
+    const dirLabel = { download: "téléchargement", upload: "téléversement", send: "envoi", list: "listage", publish: "publication", subscribe: "abonnement" }[r.direction] || r.direction;
+    const rows = [
+      ["hôte", r.host], ["port", r.port], ["chemin", r.path],
+      ["sens", dirLabel],
+      ["TLS", r.secure ? "oui" : r.tlsOpportunistic ? "opportuniste (STARTTLS)" : "non"],
+    ];
+    if (r.username) rows.push(["utilisateur", r.username + (r.password ? " : ••••••" : "")]);
+    if (r.smtp) { rows.push(["de", r.smtp.from || "—"]); rows.push(["destinataires", r.smtp.recipients.join(", ") || "—"]); }
+    if (r.ftp && r.ftp.quote.length) rows.push(["commandes -Q", r.ftp.quote.join(" ; ")]);
+    if (r.mqtt) { rows.push(["qos", r.mqtt.qos]); rows.push(["retain", r.mqtt.retain ? "oui" : "non"]); }
+    if (r.payload) rows.push(["charge", r.payload.filePath ? "@" + r.payload.filePath : (r.payload.text || "")]);
+    if (r.output) rows.push(["sortie -o", r.output]);
+
+    container.innerHTML = `
+      <span class="badge other" style="color: var(--accent)">${esc(r.scheme)}://</span>
+      <p class="url-line">${esc(r.url)}</p>
+      <p class="section-label">Requête protocolaire</p>
+      <table class="kv">${rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join("")}</table>`;
+
+    $("fetch-code").textContent =
+      `import { run, registerDefaultNodeAdapters } from "urban-http";\n\n` +
+      `registerDefaultNodeAdapters(); // une fois, côté Node\n\n` +
+      `const { result } = await run(${JSON.stringify(parsed.request.url)});\n` +
+      `// adaptateur ${esc(r.scheme)} → ${esc(dirLabel)} ; result.summary, result.body, result.meta`;
+
+    const ws = [...(parsed.warnings || []), ...(r.warnings || [])];
+    $("warn-panel").hidden = ws.length === 0;
+    $("warnings").innerHTML = ws.map((w) => `<li class="${esc(w.level)}">${w.option ? `<code>${esc(w.option)}</code> — ` : ""}${esc(w.message)}</li>`).join("");
   }
 
   function renderTabs() {
@@ -626,6 +696,13 @@ TOKEN=TOKEN_DEMO</textarea>
   /* Exécution réelle                                                   */
   /* ----------------------------------------------------------------- */
   async function executeCurrent() {
+    if (currentProtocol) {
+      const panel = $("resp-panel");
+      panel.hidden = false;
+      $("response").innerHTML = `<p class="muted">Les protocoles ${esc(currentProtocol.scheme)}:// s'exécutent côté Node
+        (registerDefaultNodeAdapters() + run()), pas depuis le navigateur. Le code ci-dessus montre l'appel.</p>`;
+      return;
+    }
     if (!currentResult || currentResult.requests.length === 0) return;
     const req = currentResult.requests[currentIndex];
     const panel = $("resp-panel");
