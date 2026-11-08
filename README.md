@@ -1,5 +1,7 @@
 # urban-http
 
+[![CI](https://github.com/gaelgael5/urban-http/actions/workflows/ci.yml/badge.svg)](https://github.com/gaelgael5/urban-http/actions/workflows/ci.yml)
+
 SDK **Python** pour transformer une commande **curl** ou une **collection Postman**
 en **appel exécutable** — HTTP via la bibliothèque standard, et les autres
 protocoles de curl (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket) via
@@ -143,9 +145,14 @@ exemples HTTP ciblent httpbin.org.
 ## Développement
 
 ```bash
-python -m pytest               # 148 tests : tokenizer, parser, Postman, variables,
-                               # globbing, cookies, Digest, exécution, protocoles
+python -m pytest               # 199 tests : tokenizer, parser, Postman, variables,
+                               # globbing, cookies, Digest, exécution, protocoles,
+                               # options TLS/réseau, OpenAPI
 ```
+
+La CI (GitHub Actions) lance les tests sur Python 3.9 → 3.13 et construit le
+paquet à chaque push / PR. Une version se publie sur PyPI en poussant un tag
+`vX.Y.Z` — voir **[RELEASING.md](RELEASING.md)**.
 
 ## Couverture de curl
 
