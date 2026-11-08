@@ -23,7 +23,9 @@ var UrbanHttp = (() => {
   __export(index_exports, {
     authHeader: () => authHeader,
     execute: () => execute,
+    isPostmanCollection: () => isPostmanCollection,
     parseCurl: () => parseCurl,
+    parsePostman: () => parsePostman,
     toFetch: () => toFetch,
     toFetchCode: () => toFetchCode,
     tokenize: () => tokenize
@@ -797,6 +799,259 @@ var UrbanHttp = (() => {
     if (!qs) return url;
     if (!url) return url;
     return url + (url.includes("?") ? "&" : "?") + qs;
+  }
+
+  // src/postman.ts
+  function isPostmanCollection(input) {
+    try {
+      const obj = typeof input === "string" ? JSON.parse(input) : input;
+      return !!obj && typeof obj === "object" && !!obj.info && Array.isArray(obj.item);
+    } catch {
+      return false;
+    }
+  }
+  function parsePostman(input, opts = {}) {
+    const globalWarnings = [];
+    let collection;
+    try {
+      collection = typeof input === "string" ? JSON.parse(input) : input;
+    } catch (e) {
+      return {
+        requests: [],
+        warnings: [{ code: "invalid-json", message: `JSON invalide : ${e.message}`, level: "error" }]
+      };
+    }
+    if (!collection || typeof collection !== "object" || !Array.isArray(collection.item)) {
+      return {
+        requests: [],
+        warnings: [{ code: "not-a-collection", message: "Ce JSON n'est pas une collection Postman (champs info/item absents).", level: "error" }]
+      };
+    }
+    if (collection.info?.schema && !/collection\/v2\./.test(collection.info.schema)) {
+      globalWarnings.push({
+        code: "unknown-schema",
+        message: `Sch\xE9ma "${collection.info.schema}" inattendu : seul le format Collection v2.x est pris en charge, l'import continue au mieux.`,
+        level: "warning"
+      });
+    }
+    const vars = /* @__PURE__ */ new Map();
+    for (const v of collection.variable ?? []) {
+      if (v.key !== void 0 && !v.disabled) vars.set(v.key, v.value ?? "");
+    }
+    for (const [k, v] of Object.entries(opts.variables ?? {})) vars.set(k, v);
+    const unresolved = /* @__PURE__ */ new Set();
+    const substitute = (s) => s.replace(/\{\{([^{}]+)\}\}/g, (whole, name) => {
+      if (vars.has(name)) return vars.get(name);
+      unresolved.add(name);
+      return whole;
+    });
+    const requests = [];
+    walkItems(collection.item, collection.auth, collection, substitute, requests);
+    for (const name of unresolved) {
+      globalWarnings.push({
+        code: "unresolved-variable",
+        message: `Variable {{${name}}} non r\xE9solue : passez sa valeur via options.variables.`,
+        level: "warning"
+      });
+    }
+    if (requests.length === 0) {
+      globalWarnings.push({ code: "no-request", message: "La collection ne contient aucune requ\xEAte.", level: "error" });
+    }
+    return { requests, warnings: globalWarnings };
+  }
+  function walkItems(items, inheritedAuth, collection, substitute, out) {
+    for (const item of items) {
+      const auth = item.auth ?? (typeof item.request === "object" ? item.request?.auth : void 0) ?? inheritedAuth;
+      if (Array.isArray(item.item)) {
+        walkItems(item.item, auth, collection, substitute, out);
+      }
+      if (item.request !== void 0) {
+        out.push(buildRequest(item, auth, substitute));
+      }
+    }
+  }
+  function buildRequest(item, auth, substitute) {
+    const warnings = [];
+    const options = defaultOptions();
+    options.followRedirects = item.protocolProfileBehavior?.followRedirects !== false;
+    const req = typeof item.request === "string" ? { method: "GET", url: item.request } : item.request ?? {};
+    const method = (req.method ?? "GET").toUpperCase();
+    const headers = [];
+    const query = [];
+    let url = "";
+    if (typeof req.url === "string") {
+      url = substitute(req.url);
+    } else if (req.url) {
+      const u = req.url;
+      if (u.raw) {
+        url = substitute(u.raw);
+      } else {
+        const host = Array.isArray(u.host) ? u.host.join(".") : u.host ?? "";
+        const path = Array.isArray(u.path) ? u.path.join("/") : u.path ?? "";
+        url = substitute(`${u.protocol ?? "http"}://${host}${u.port ? ":" + u.port : ""}${path ? "/" + path : ""}`);
+      }
+      if (Array.isArray(u.query) && u.query.length > 0) {
+        const active = u.query.filter((q) => !q.disabled && q.key !== void 0);
+        const base = url.split("?")[0] ?? url;
+        const qs = active.map((q) => `${substitute(q.key)}${q.value !== void 0 ? "=" + substitute(q.value) : ""}`).join("&");
+        for (const q of active) query.push([substitute(q.key), substitute(q.value ?? "")]);
+        url = qs ? `${base}?${qs}` : base;
+      }
+    }
+    if (typeof req.header === "string") {
+      for (const line of req.header.split(/\r?\n/)) {
+        const colon = line.indexOf(":");
+        if (colon > 0) headers.push([substitute(line.slice(0, colon).trim()), substitute(line.slice(colon + 1).trim())]);
+      }
+    } else {
+      for (const h of req.header ?? []) {
+        if (h.disabled || h.key === void 0) continue;
+        headers.push([substitute(h.key), substitute(h.value ?? "")]);
+      }
+    }
+    const hasHeader = (name) => headers.some(([n]) => n.toLowerCase() === name.toLowerCase());
+    let body;
+    const b = req.body;
+    if (b && !b.disabled && b.mode) {
+      switch (b.mode) {
+        case "raw": {
+          const text = substitute(b.raw ?? "");
+          body = { kind: "raw", text };
+          const lang = b.options?.raw?.language;
+          const ct = lang === "json" ? "application/json" : lang === "xml" ? "application/xml" : lang === "html" ? "text/html" : lang === "javascript" ? "application/javascript" : lang === "text" ? "text/plain" : void 0;
+          if (ct && !hasHeader("content-type")) headers.push(["Content-Type", ct]);
+          break;
+        }
+        case "urlencoded": {
+          const pairs = (b.urlencoded ?? []).filter((p) => !p.disabled && p.key !== void 0).map((p) => `${encodeForm(substitute(p.key))}=${encodeForm(substitute(p.value ?? ""))}`);
+          body = { kind: "urlencoded", text: pairs.join("&") };
+          if (!hasHeader("content-type")) headers.push(["Content-Type", "application/x-www-form-urlencoded"]);
+          break;
+        }
+        case "formdata": {
+          const parts = [];
+          for (const p of b.formdata ?? []) {
+            if (p.disabled || p.key === void 0) continue;
+            if (p.type === "file") {
+              const srcs = Array.isArray(p.src) ? p.src : p.src ? [p.src] : [];
+              if (srcs.length === 0) parts.push({ name: substitute(p.key), filePath: "" });
+              for (const src of srcs) parts.push({ name: substitute(p.key), filePath: src, contentType: p.contentType });
+            } else {
+              parts.push({ name: substitute(p.key), value: substitute(p.value ?? ""), contentType: p.contentType });
+            }
+          }
+          body = { kind: "multipart", parts };
+          break;
+        }
+        case "file": {
+          body = { kind: "file", filePath: b.file?.src ?? "" };
+          break;
+        }
+        case "graphql": {
+          let variables = void 0;
+          const rawVars = b.graphql?.variables;
+          if (rawVars) {
+            try {
+              variables = JSON.parse(substitute(rawVars));
+            } catch {
+              variables = substitute(rawVars);
+            }
+          }
+          body = {
+            kind: "raw",
+            text: JSON.stringify({ query: substitute(b.graphql?.query ?? ""), ...variables !== void 0 ? { variables } : {} })
+          };
+          if (!hasHeader("content-type")) headers.push(["Content-Type", "application/json"]);
+          break;
+        }
+        default:
+          warnings.push({
+            code: "unsupported-body-mode",
+            message: `Mode de corps Postman "${b.mode}" non pris en charge.`,
+            level: "warning"
+          });
+      }
+    }
+    const authSpec = convertAuth(auth, substitute, headers, query, warnings);
+    const hasScript = (item.event ?? []).some((e) => {
+      const exec = e.script?.exec;
+      const text = Array.isArray(exec) ? exec.join("") : exec ?? "";
+      return text.trim().length > 0;
+    });
+    if (hasScript) {
+      warnings.push({
+        code: "scripts-not-executed",
+        message: "Cette requ\xEAte a des scripts Postman (pre-request/tests) : ils ne sont pas ex\xE9cut\xE9s par le SDK.",
+        level: "info"
+      });
+    }
+    return {
+      name: item.name,
+      method,
+      url,
+      query,
+      headers,
+      body,
+      auth: authSpec,
+      options,
+      warnings
+    };
+  }
+  function authParam(section, key) {
+    if (Array.isArray(section)) {
+      const entry = section.find((p) => p.key === key);
+      return entry?.value !== void 0 ? String(entry.value) : void 0;
+    }
+    if (section && typeof section === "object") {
+      const v = section[key];
+      return v !== void 0 ? String(v) : void 0;
+    }
+    return void 0;
+  }
+  function convertAuth(auth, substitute, headers, query, warnings) {
+    if (!auth?.type || auth.type === "noauth") return void 0;
+    const section = auth[auth.type];
+    const get = (key) => {
+      const v = authParam(section, key);
+      return v !== void 0 ? substitute(v) : void 0;
+    };
+    switch (auth.type) {
+      case "basic":
+        return { kind: "basic", username: get("username") ?? "", password: get("password") ?? "" };
+      case "bearer":
+        return { kind: "bearer", token: get("token") ?? "" };
+      case "apikey": {
+        const key = get("key") ?? "";
+        const value = get("value") ?? "";
+        if ((get("in") ?? "header") === "query") {
+          query.push([key, value]);
+          warnings.push({
+            code: "apikey-query",
+            message: `Auth "apikey" en query string : pensez \xE0 v\xE9rifier que l'URL finale contient bien ${key}=...`,
+            level: "info"
+          });
+        } else if (key) {
+          headers.push([key, value]);
+        }
+        return void 0;
+      }
+      case "digest":
+        warnings.push({ code: "unsupported-auth", message: "Auth Digest : non prise en charge (n\xE9gociation challenge/r\xE9ponse).", level: "warning" });
+        return { kind: "digest", username: get("username"), password: get("password") };
+      case "ntlm":
+        warnings.push({ code: "unsupported-auth", message: "Auth NTLM : non prise en charge.", level: "warning" });
+        return { kind: "ntlm", username: get("username"), password: get("password") };
+      default:
+        warnings.push({
+          code: "unsupported-auth",
+          message: `Type d'auth Postman "${auth.type}" non pris en charge : ajoutez l'en-t\xEAte correspondant manuellement.`,
+          level: "warning"
+        });
+        return void 0;
+    }
+  }
+  function encodeForm(s) {
+    return encodeURIComponent(s).replace(/%20/g, "+");
   }
 
   // src/to-fetch.ts

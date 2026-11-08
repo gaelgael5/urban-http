@@ -148,5 +148,5 @@ ou d'un export Postman passe telle quelle.
 
 L'export « Copy as cURL » de Postman (bash **et** cmd Windows) est couvert par ce parser :
 continuations `^`, quotes doublées `""`, `--data-raw`, etc.
-L'import direct du format **Postman Collection v2.1 (JSON)** est prévu comme étape suivante :
-le modèle `HttpRequestModel` est déjà indépendant de curl pour l'accueillir.
+L'import direct du format **Postman Collection v2.0 / v2.1 (JSON)** est assuré par
+`parsePostman()` — voir [postman-collections.md](postman-collections.md).

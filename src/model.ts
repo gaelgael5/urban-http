@@ -91,6 +91,8 @@ export interface RequestOptions {
 
 /** Une requête HTTP prête à être transformée en appel fetch. */
 export interface HttpRequestModel {
+  /** Nom de la requête (renseigné par l'import Postman). */
+  name?: string;
   method: string;
   /** URL complète, query string incluse. */
   url: string;

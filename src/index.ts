@@ -11,6 +11,8 @@
  * ```
  */
 export { parseCurl } from "./parse.js";
+export { parsePostman, isPostmanCollection } from "./postman.js";
+export type { PostmanParseOptions } from "./postman.js";
 export { tokenize } from "./tokenize.js";
 export { toFetch, toFetchCode, authHeader } from "./to-fetch.js";
 export type { FetchPlan, ToFetchOptions } from "./to-fetch.js";

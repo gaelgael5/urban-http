@@ -299,7 +299,7 @@ footer.site a { color: var(--accent); }
 
 <header class="site">
   <div class="brand"><span class="dollar">$</span> urban-http</div>
-  <div class="tagline">Collez une commande curl (ou un export Postman « Copy as cURL ») — le SDK la transforme en appel HTTP exécutable.</div>
+  <div class="tagline">Collez une commande curl, un export « Copy as cURL » ou une collection Postman v2.1 (JSON) — le SDK la transforme en appels HTTP exécutables.</div>
 </header>
 
 <div class="layout">
@@ -311,9 +311,9 @@ footer.site a { color: var(--accent); }
 
   <main>
     <section class="panel">
-      <div class="panel-h">Commande curl</div>
+      <div class="panel-h">Commande curl ou collection Postman</div>
       <div class="panel-b">
-        <textarea id="cmd" spellcheck="false" aria-label="Commande curl à analyser">curl https://httpbin.org/get</textarea>
+        <textarea id="cmd" spellcheck="false" aria-label="Commande curl ou collection Postman à analyser">curl https://httpbin.org/get</textarea>
         <div class="toolbar">
           <button class="primary" id="btn-exec">Exécuter la requête</button>
           <button class="ghost" id="btn-copy">Copier le code fetch</button>
@@ -357,7 +357,56 @@ footer.site a { color: var(--accent); }
 <script>
 (function () {
   "use strict";
-  const { parseCurl, toFetch, toFetchCode, execute } = window.UrbanHttp;
+  const { parseCurl, parsePostman, toFetch, toFetchCode, execute } = window.UrbanHttp;
+
+  /* Collection Postman d'exemple (sérialisée dans les exemples ci-dessous) */
+  const POSTMAN_SAMPLE = {
+    info: { name: "Demo API", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    auth: { type: "bearer", bearer: [{ key: "token", value: "{{token}}" }] },
+    variable: [
+      { key: "baseUrl", value: "https://httpbin.org" },
+      { key: "token", value: "TOKEN_DEMO" },
+    ],
+    item: [
+      {
+        name: "Liste (GET + query)",
+        request: {
+          method: "GET",
+          url: {
+            raw: "{{baseUrl}}/get?limit=10",
+            query: [
+              { key: "limit", value: "10" },
+              { key: "debug", value: "1", disabled: true },
+            ],
+          },
+        },
+      },
+      {
+        name: "Création (POST JSON)",
+        request: {
+          method: "POST",
+          url: "{{baseUrl}}/post",
+          body: { mode: "raw", raw: '{"name": "clavier", "qty": 2}', options: { raw: { language: "json" } } },
+        },
+      },
+      {
+        name: "Upload (formdata)",
+        request: {
+          method: "POST",
+          url: "{{baseUrl}}/post",
+          body: { mode: "formdata", formdata: [
+            { key: "name", value: "jean", type: "text" },
+            { key: "file", src: "photo.png", type: "file", contentType: "image/png" },
+          ]},
+        },
+      },
+    ],
+  };
+
+  const POSTMAN_UNRESOLVED = {
+    info: { name: "Variables manquantes", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    item: [{ name: "GET avec variable", request: "{{baseUrl}}/users/{{userId}}" }],
+  };
 
   /* ----------------------------------------------------------------- */
   /* Exemples                                                           */
@@ -396,6 +445,10 @@ footer.site a { color: var(--accent); }
       { label: "Deux URLs, même config", cmd: `curl -H 'X-Batch: 1' https://httpbin.org/get https://httpbin.org/uuid` },
       { label: "--next : requêtes enchaînées", cmd: `curl -d 'a=1' https://httpbin.org/post --next -I https://httpbin.org/get` },
       { label: "Export Postman (cmd Windows)", cmd: `curl --location --request POST "https://httpbin.org/post" ^\n--header "Content-Type: application/json" ^\n--data-raw "{""ville"": ""Paris""}"` },
+    ]},
+    { group: "Collection Postman", items: [
+      { label: "Collection v2.1 (3 requêtes)", cmd: JSON.stringify(POSTMAN_SAMPLE, null, 2) },
+      { label: "Variables non résolues", cmd: JSON.stringify(POSTMAN_UNRESOLVED, null, 2), warn: true },
     ]},
     { group: "Limites signalées", items: [
       { label: "Digest (non supporté)", cmd: `curl --digest -u alice:secret https://httpbin.org/digest-auth/auth/alice/secret`, warn: true },
@@ -441,7 +494,9 @@ footer.site a { color: var(--accent); }
     $("resp-panel").hidden = true;
     let result;
     try {
-      result = parseCurl($("cmd").value);
+      const input = $("cmd").value;
+      // Un JSON collé = collection Postman ; sinon, commande curl
+      result = input.trim().startsWith("{") ? parsePostman(input) : parseCurl(input);
     } catch (e) {
       currentResult = null;
       $("parsed").innerHTML = `<p style="color: var(--err)">Erreur du parser : ${esc(e.message)}</p>`;
@@ -461,7 +516,7 @@ footer.site a { color: var(--accent); }
     const n = currentResult ? currentResult.requests.length : 0;
     if (n <= 1) { tabs.innerHTML = ""; return; }
     tabs.innerHTML = currentResult.requests
-      .map((r, i) => `<button data-t="${i}" class="${i === currentIndex ? "active" : ""}">Requête ${i + 1}</button>`)
+      .map((r, i) => `<button data-t="${i}" class="${i === currentIndex ? "active" : ""}">${esc(r.name || "Requête " + (i + 1))}</button>`)
       .join("");
   }
 
@@ -485,6 +540,7 @@ footer.site a { color: var(--accent); }
     const req = currentResult.requests[currentIndex];
 
     let html = `
+      ${req.name ? `<p class="section-label" style="margin-top:0">${esc(req.name)}</p>` : ""}
       <span class="badge ${methodClass(req.method)}">${esc(req.method)}</span>
       <p class="url-line">${esc(req.url)}</p>`;
 
@@ -514,7 +570,7 @@ footer.site a { color: var(--accent); }
     }
 
     const opts = [];
-    if (req.options.followRedirects) opts.push("suit les redirections (-L)");
+    if (req.options.followRedirects) opts.push("suit les redirections");
     if (req.options.maxRedirs !== undefined) opts.push(`max-redirs: ${req.options.maxRedirs}`);
     if (req.options.timeoutMs) opts.push(`timeout: ${req.options.timeoutMs} ms`);
     if (req.options.retry) opts.push(`retry: ${req.options.retry}`);

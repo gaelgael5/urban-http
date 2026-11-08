@@ -1,10 +1,12 @@
 # urban-http
 
-SDK pour transformer une commande **curl** (ou un export Postman « Copy as cURL ») en
-**appel HTTP exécutable** dans une application — Node ≥ 18 ou navigateur, sans dépendance à l'exécution.
+SDK pour transformer une commande **curl** ou une **collection Postman** en
+**appels HTTP exécutables** dans une application — Node ≥ 18 ou navigateur, sans dépendance à l'exécution.
 
 ```
-commande curl ──▶ parseCurl() ──▶ HttpRequestModel ──▶ toFetch() / execute()
+commande curl ───▶ parseCurl() ────┐
+                                   ├──▶ HttpRequestModel ──▶ toFetch() / execute()
+collection Postman ─▶ parsePostman() ┘
 ```
 
 ## Utilisation
@@ -41,6 +43,22 @@ Tout ce qui n'est pas reproductible (Digest, proxy, fichiers de cookies…) est 
 dans `warnings`** plutôt que silencieusement ignoré : chaque warning a un `code` stable,
 un `message` en français et un niveau (`info` | `warning` | `error`).
 
+## Collections Postman
+
+```ts
+import { parsePostman, isPostmanCollection } from "urban-http";
+
+const { requests } = parsePostman(collectionJson, {
+  variables: { baseUrl: "https://staging.example.com" }, // valeurs d'environnement
+});
+requests[0].name; // le nom de la requête dans la collection
+```
+
+Le format **Collection v2.0 / v2.1** est importé vers le même modèle : dossiers imbriqués,
+variables `{{...}}`, tous les modes de corps (raw, urlencoded, formdata, file, graphql),
+auth basic/bearer/apikey avec héritage collection → dossier → requête.
+Détail : **[docs/postman-collections.md](docs/postman-collections.md)**.
+
 ## Ce qui est pris en charge
 
 L'inventaire complet des cas d'usage curl et leur statut (✅ supporté, 🟡 partiel,
@@ -71,7 +89,6 @@ npm run build          # tsc -> dist/ + bundle navigateur
 
 ## Feuille de route
 
-- Import direct du format **Postman Collection v2.1** (le modèle `HttpRequestModel`
-  est déjà indépendant de curl).
 - Proxy côté Node via `undici.ProxyAgent`.
+- Variables dynamiques Postman (`{{$guid}}`, `{{$timestamp}}`…).
 - Générateurs de code supplémentaires (axios, Python requests…).
