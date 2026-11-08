@@ -1,1 +1,77 @@
 # urban-http
+
+SDK pour transformer une commande **curl** (ou un export Postman « Copy as cURL ») en
+**appel HTTP exécutable** dans une application — Node ≥ 18 ou navigateur, sans dépendance à l'exécution.
+
+```
+commande curl ──▶ parseCurl() ──▶ HttpRequestModel ──▶ toFetch() / execute()
+```
+
+## Utilisation
+
+```ts
+import { parseCurl, execute, toFetch, toFetchCode } from "urban-http";
+
+const { requests, warnings } = parseCurl(
+  `curl -X POST https://api.example.com/items \\
+     -H 'Content-Type: application/json' \\
+     -d '{"name": "clavier"}' \\
+     -u alice:secret -m 10`
+);
+
+// 1. Inspecter la requête analysée
+const req = requests[0];
+req.method;       // "POST"
+req.url;          // "https://api.example.com/items"
+req.headers;      // [["Content-Type", "application/json"]]
+req.body?.text;   // '{"name": "clavier"}'
+
+// 2. L'exécuter directement (fetch, avec timeout et retries de curl)
+const { response } = await execute(req);
+
+// 3. Ou récupérer les paramètres fetch pour les utiliser soi-même
+const { url, init } = toFetch(req);
+await fetch(url, init);
+
+// 4. Ou générer un extrait de code fetch lisible
+console.log(toFetchCode(req));
+```
+
+Tout ce qui n'est pas reproductible (Digest, proxy, fichiers de cookies…) est **signalé
+dans `warnings`** plutôt que silencieusement ignoré : chaque warning a un `code` stable,
+un `message` en français et un niveau (`info` | `warning` | `error`).
+
+## Ce qui est pris en charge
+
+L'inventaire complet des cas d'usage curl et leur statut (✅ supporté, 🟡 partiel,
+⚪ ignoré, ❌ signalé) est dans **[docs/curl-use-cases.md](docs/curl-use-cases.md)**.
+
+En résumé : syntaxe shell complète (quotes, continuations bash `\` et cmd `^`, `$'...'`),
+méthodes, en-têtes, tous les `--data-*`, `--json`, `-G`, multipart `-F`, Basic/Bearer,
+cookies inline, redirections `-L`, timeout `-m`, retries `--retry`, URLs multiples et `--next`.
+
+## Site de démonstration
+
+`demo/index.html` est un playground : collez une commande curl, voyez la requête analysée,
+les warnings, le code fetch généré, et exécutez la requête depuis le navigateur
+(les exemples ciblent httpbin.org, qui autorise le CORS).
+
+```bash
+npm run build          # compile le SDK et le bundle navigateur demo/urban-http.browser.js
+npx serve demo         # ou n'importe quel serveur statique
+```
+
+## Développement
+
+```bash
+npm install
+npm test               # vitest : tokenizer, parser, exécution (fetch simulé)
+npm run build          # tsc -> dist/ + bundle navigateur
+```
+
+## Feuille de route
+
+- Import direct du format **Postman Collection v2.1** (le modèle `HttpRequestModel`
+  est déjà indépendant de curl).
+- Proxy côté Node via `undici.ProxyAgent`.
+- Générateurs de code supplémentaires (axios, Python requests…).
