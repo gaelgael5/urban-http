@@ -30,6 +30,8 @@ mqtt = ["paho-mqtt>=2"]
 smb = ["smbprotocol>=1.12"]
 # WebSocket côté client : websockets couvre tous les Python >= 3.9.
 websocket = ["websockets>=12"]
+# Lecture des contrats OpenAPI au format YAML (le JSON ne nécessite rien).
+openapi = ["pyyaml>=6"]
 # Serveur du site de test.
 web = ["flask>=3"]
 all = [

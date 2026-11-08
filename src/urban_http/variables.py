@@ -47,7 +47,8 @@ def substitute_placeholders(s: str, ctx: VariableContext) -> str:
                 ctx.unsupported_dynamic.append(name)
             return match.group(0)
         if name in ctx.values:
-            return ctx.values[name]
+            value = ctx.values[name]
+            return value if isinstance(value, str) else str(value)
         if name not in ctx.unresolved:
             ctx.unresolved.append(name)
         return match.group(0)

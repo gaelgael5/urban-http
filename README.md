@@ -100,12 +100,34 @@ print(result.protocol.summary)
 enregistré. Chaque adaptateur accepte un `client_factory` injectable (tests sans
 réseau, ou autre bibliothèque). Détail : **[docs/protocols.md](docs/protocols.md)**.
 
+## OpenAPI → curl
+
+`openapi_to_curl(contrat)` lit un contrat OpenAPI v3.x (dict, JSON, ou YAML avec
+l'extra `openapi`) et renvoie, pour chaque opération, une commande curl avec des
+variables injectables, le tableau de ses paramètres, et un modèle générique du
+corps de requête.
+
+```python
+from urban_http import openapi_to_curl, parse_curl
+
+for op in openapi_to_curl(contrat):
+    print(op.method, op.path)
+    print(op.curl)                 # avec des {{placeholders}}
+    print(op.example_variables)    # {nom: valeur} prêt pour parse_curl
+    req = parse_curl(op.curl, op.example_variables).requests[0]
+```
+
+Le corps est généré exhaustivement avec des valeurs types : chaîne → nom de la
+propriété, entier → 0, date/date-time → instant courant, sous-objet développé,
+tableau à un seul élément. Détail : **[docs/openapi.md](docs/openapi.md)**.
+
 ## Ligne de commande
 
 ```bash
 urban-http "curl -X POST https://api.example.com -d a=1"     # analyse et affiche la requête
 urban-http "curl file:///etc/hostname" --run                 # analyse ET exécute
 urban-http "curl {{baseUrl}}/get" --var baseUrl=https://httpbin.org
+urban-http --openapi contrat.json                            # génère les curl d'un contrat OpenAPI
 ```
 
 ## Site de test

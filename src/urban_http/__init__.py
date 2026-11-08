@@ -30,6 +30,7 @@ from .glob import GlobError, expand_curl_globs
 from .digest import build_digest_authorization, parse_digest_challenge
 from .cookies import cookies_for_url, parse_netscape_cookies
 from .command import ParsedCommand, RunResult, parse_command, run
+from .openapi import CurlOperation, OperationParam, openapi_to_curl
 from .protocols import (
     ProtocolContext,
     ProtocolRequest,
@@ -53,5 +54,6 @@ __all__ = [
     "cookies_for_url", "parse_netscape_cookies", "ParsedCommand", "RunResult", "parse_command",
     "run", "ProtocolContext", "ProtocolRequest", "ProtocolResult", "execute_protocol",
     "parse_protocol_command", "register_default_adapters", "register_protocol",
-    "registered_schemes", "unregister_protocol", "__version__",
+    "registered_schemes", "unregister_protocol",
+    "openapi_to_curl", "CurlOperation", "OperationParam", "__version__",
 ]

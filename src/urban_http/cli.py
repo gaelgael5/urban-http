@@ -10,7 +10,7 @@ import json
 import sys
 from typing import Dict, List
 
-from . import parse_command, parse_postman, is_postman_collection, register_default_adapters, run
+from . import parse_command, parse_postman, is_postman_collection, openapi_to_curl, register_default_adapters, run
 from .model import HttpRequestModel
 
 
@@ -35,13 +35,20 @@ def _print_http(req: HttpRequestModel) -> None:
 
 def main(argv: List[str] = None) -> int:
     parser = argparse.ArgumentParser(prog="urban-http", description="Transformer une commande curl / Postman en appel exécutable.")
-    parser.add_argument("command", help="commande curl (entre guillemets), ou '-' pour lire une collection Postman sur stdin")
+    parser.add_argument("command", nargs="?", help="commande curl (entre guillemets), ou '-' pour lire une collection Postman sur stdin")
     parser.add_argument("--run", action="store_true", help="exécuter la requête au lieu de seulement l'analyser")
     parser.add_argument("--var", action="append", default=[], metavar="CLE=VALEUR", help="variable (répétable)")
-    parser.add_argument("--json", action="store_true", help="sortie JSON de la requête analysée")
+    parser.add_argument("--json", action="store_true", help="sortie JSON")
+    parser.add_argument("--openapi", metavar="FICHIER", help="générer les commandes curl d'un contrat OpenAPI (ou '-' pour stdin)")
     args = parser.parse_args(argv)
 
     variables = _parse_vars(args.var)
+
+    if args.openapi:
+        return _openapi_mode(args.openapi, args.json)
+
+    if not args.command:
+        parser.error("une commande curl ou --openapi est requis")
     command = sys.stdin.read() if args.command == "-" else args.command
 
     if is_postman_collection(command):
@@ -80,6 +87,21 @@ def main(argv: List[str] = None) -> int:
                 print(f"[{w.level}] {w.message}", file=sys.stderr)
             return 1
         print(f"{r.scheme}:// {r.direction} {r.host}:{r.port}{r.path}")
+    return 0
+
+
+def _openapi_mode(source: str, as_json: bool) -> int:
+    contract = sys.stdin.read() if source == "-" else open(source, "r", encoding="utf-8").read()
+    operations = openapi_to_curl(contract)
+    if as_json:
+        print(json.dumps([op.to_dict() for op in operations], indent=2, ensure_ascii=False))
+        return 0
+    for op in operations:
+        print(f"# {op.method} {op.path}" + (f" — {op.summary}" if op.summary else ""))
+        print(op.curl)
+        if op.example_variables:
+            print("# variables : " + ", ".join(f"{k}={v}" for k, v in op.example_variables.items()))
+        print()
     return 0
 
 
