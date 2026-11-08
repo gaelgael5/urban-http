@@ -2,6 +2,7 @@
  * Transformation d'un HttpRequestModel en paramètres fetch(),
  * et génération d'un extrait de code JavaScript équivalent.
  */
+import { cookiesForUrl, parseNetscapeCookies } from "./cookies.js";
 import { FileReader, HttpRequestModel } from "./model.js";
 
 export interface ToFetchOptions {
@@ -62,6 +63,22 @@ export function toFetch(req: HttpRequestModel, opts: ToFetchOptions = {}): Fetch
       return undefined;
     }
   };
+
+  // Cookies depuis fichier(s) -b : format Netscape, filtrés pour cette URL
+  if (req.cookieFiles && req.cookieFiles.length > 0) {
+    const resolved: string[] = [];
+    for (const file of req.cookieFiles) {
+      const content = read(file);
+      if (content === undefined) continue;
+      const text = typeof content === "string" ? content : new TextDecoder().decode(content);
+      const cookieStr = cookiesForUrl(parseNetscapeCookies(text), req.url);
+      if (cookieStr) resolved.push(cookieStr);
+    }
+    if (resolved.length > 0) {
+      const existing = headers.get("cookie");
+      headers.set("Cookie", [existing, ...resolved].filter(Boolean).join("; "));
+    }
+  }
 
   let body: BodyInit | undefined;
   const b = req.body;

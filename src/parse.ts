@@ -3,6 +3,7 @@
  * en un ou plusieurs HttpRequestModel.
  */
 import { tokenize } from "./tokenize.js";
+import { GlobError, expandCurlGlobs } from "./glob.js";
 import {
   AuthSpec,
   DataItem,
@@ -28,6 +29,8 @@ interface ParseState {
   auth?: AuthSpec;
   authKindOverride?: AuthSpec["kind"];
   cookies: string[];
+  cookieFiles: string[];
+  globoff: boolean;
   userAgent?: string;
   referer?: string;
   range?: string;
@@ -47,6 +50,8 @@ function newState(): ParseState {
     formFields: [],
     formIsMultipart: false,
     cookies: [],
+    cookieFiles: [],
+    globoff: false,
     jsonMode: false,
     options: defaultOptions(),
     warnings: [],
@@ -122,7 +127,7 @@ const LONG_OPTIONS: Record<string, OptDef> = {
     takesValue: false,
     handler: (st) => {
       st.authKindOverride = "digest";
-      warn(st, "unsupported-auth", "--digest : l'authentification Digest nécessite une négociation challenge/réponse non prise en charge par fetch.", "--digest");
+      warn(st, "digest-handshake", "--digest : la négociation challenge/réponse (MD5/SHA-256, qop=auth) est gérée par execute() en deux requêtes.", "--digest", "info");
     },
   },
   "ntlm": {
@@ -177,10 +182,10 @@ const LONG_OPTIONS: Record<string, OptDef> = {
     takesValue: true,
     handler: (st, v) => {
       st.options.proxy = v;
-      warn(st, "unsupported-option", "--proxy : fetch ne permet pas de configurer un proxy par requête (possible côté Node via undici.ProxyAgent).", "--proxy");
+      warn(st, "node-only-option", "--proxy : appliqué côté Node via undici.ProxyAgent (paquet undici requis) ; sans effet dans un navigateur.", "--proxy", "info");
     },
   },
-  "proxy-user": { takesValue: true, handler: unsupported("--proxy-user", "authentification proxy") },
+  "proxy-user": { takesValue: true, handler: (st, v) => (st.options.proxyUser = v) },
   "noproxy": { takesValue: true, handler: noop },
   "http1.0": { takesValue: false, handler: setHttpVersion("1.0") },
   "http1.1": { takesValue: false, handler: setHttpVersion("1.1") },
@@ -234,7 +239,7 @@ const LONG_OPTIONS: Record<string, OptDef> = {
   "styled-output": { takesValue: false, handler: noop },
 
   // --- Divers -------------------------------------------------------------------
-  "globoff": { takesValue: false, handler: noop },
+  "globoff": { takesValue: false, handler: (st) => (st.globoff = true) },
   "config": { takesValue: true, handler: unsupported("--config", "fichier de configuration curl") },
   "next": { takesValue: false, handler: noop }, // géré en amont (séparateur de groupes)
   "help": { takesValue: false, handler: noopInfo("--help") },
@@ -445,7 +450,8 @@ function handleCookie(st: ParseState, v: string) {
   if (v.includes("=")) {
     st.cookies.push(v);
   } else {
-    warn(st, "unsupported-option", `-b ${v} : lecture d'un fichier de cookies non prise en charge (passez les cookies sous forme "nom=valeur").`, "-b");
+    st.cookieFiles.push(v);
+    warn(st, "file-reference", `-b ${v} : fichier de cookies (format Netscape), lu au moment de l'exécution (Node) ou via l'option readFile.`, "-b", "info");
   }
 }
 
@@ -616,7 +622,33 @@ function applyNegation(st: ParseState, name: string) {
 /* ------------------------------------------------------------------ */
 
 function buildRequests(st: ParseState): HttpRequestModel[] {
-  return st.urls.map((rawUrl) => buildOne(st, rawUrl, [...st.warnings]));
+  const out: HttpRequestModel[] = [];
+  for (const rawUrl of st.urls) {
+    // Globbing façon curl : {a,b} et [1-10] développés en plusieurs URLs (sauf -g)
+    let expanded = [rawUrl];
+    let globWarning: ParseWarning | undefined;
+    if (!st.globoff && /[{}[\]]/.test(rawUrl)) {
+      try {
+        expanded = expandCurlGlobs(rawUrl);
+      } catch (e) {
+        if (e instanceof GlobError) {
+          globWarning = {
+            code: "url-globbing",
+            message: `Globbing non développé (${e.message}) : URL utilisée telle quelle. Utilisez -g pour désactiver le globbing.`,
+            level: "warning",
+          };
+        } else {
+          throw e;
+        }
+      }
+    }
+    for (const url of expanded) {
+      const warnings = [...st.warnings];
+      if (globWarning) warnings.push(globWarning);
+      out.push(buildOne(st, url, warnings));
+    }
+  }
+  return out;
 }
 
 function buildOne(st: ParseState, rawUrl: string, warnings: ParseWarning[]): HttpRequestModel {
@@ -630,10 +662,6 @@ function buildOne(st: ParseState, rawUrl: string, warnings: ParseWarning[]): Htt
     url = "http://" + url;
     pushWarn(warnings, "default-scheme", `Pas de schéma dans l'URL : "http://" ajouté (comme curl).`, undefined, "info");
   }
-  if (/[{}[\]]/.test(rawUrl)) {
-    pushWarn(warnings, "url-globbing", "L'URL contient des caractères de globbing curl ({...} ou [...]) : le globbing n'est pas développé.", undefined, "warning");
-  }
-
   // Corps
   let body: HttpRequestModel["body"];
   let bodyContentType: string | undefined;
@@ -718,6 +746,7 @@ function buildOne(st: ParseState, rawUrl: string, warnings: ParseWarning[]): Htt
     headers,
     body,
     auth,
+    cookieFiles: st.cookieFiles.length > 0 ? [...st.cookieFiles] : undefined,
     options,
     warnings,
   };

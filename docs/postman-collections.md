@@ -63,7 +63,8 @@ La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases
 | `apikey` (in: header ou query) | ✅ matérialisée en en-tête / paramètre |
 | `noauth` | ✅ |
 | Héritage collection → dossier → requête | ✅ (la plus proche l'emporte) |
-| `digest`, `ntlm` | ❌ warning (comme côté curl) |
+| `digest` | ✅ via `execute()` (négociation en deux requêtes, comme côté curl) |
+| `ntlm` | ❌ warning |
 | `oauth1`, `oauth2`, `awsv4`, `hawk`... | ❌ warning `unsupported-auth` |
 
 ## Comportement réseau

@@ -48,8 +48,9 @@ et le statut de chacun dans le parser `urban-http`.
 | HEAD | `-I, --head` | ✅ (`-X` l'emporte, comme curl) |
 | GET forcé avec données en query string | `-G, --get` | ✅ |
 | Méthode implicite POST (si corps) / PUT (si `-T`) / GET sinon | — | ✅ |
-| Globbing d'URL `{a,b}` / `[1-10]` | `curl http://e.com/[1-10]` | ❌ warning `url-globbing` |
-| Désactiver le globbing | `-g, --globoff` | ⚪ accepté |
+| Globbing d'URL : alternatives `{a,b}`, plages `[1-10]`, `[01-10]` (zéro-padding), `[a-z]`, pas `[0-100:25]`, produit cartésien | `curl http://e.com/[1-10]` | ✅ développé en plusieurs requêtes (limite : 500 URLs) |
+| Motif de globbing invalide (ex : hôte IPv6 `[::1]`) ou trop large | — | 🟡 warning `url-globbing`, URL utilisée telle quelle |
+| Désactiver le globbing | `-g, --globoff` | ✅ |
 
 ## 3. En-têtes
 
@@ -89,7 +90,7 @@ et le statut de chacun dans le parser `urban-http`.
 | Basic | `-u user:pass` → `Authorization: Basic ...` | ✅ |
 | Bearer | `--oauth2-bearer TOKEN` → `Authorization: Bearer ...` | ✅ |
 | Basic explicite | `--basic` | ✅ |
-| Digest | `--digest` | ❌ warning (challenge/réponse impossible en un aller fetch) |
+| Digest | `--digest` | ✅ via `execute()` : négociation en deux requêtes (MD5, MD5-sess, SHA-256, SHA-256-sess ; qop=auth ou RFC 2069). `qop=auth-int` ❌. Navigateur : le serveur doit exposer `WWW-Authenticate` via CORS |
 | NTLM / Negotiate (Kerberos) | `--ntlm, --negotiate` | ❌ warning |
 | Signature AWS | `--aws-sigv4` | ❌ warning |
 
@@ -98,7 +99,7 @@ et le statut de chacun dans le parser `urban-http`.
 | Cas d'usage | Options | Statut |
 |---|---|---|
 | Cookies inline | `-b "a=1; b=2"` → en-tête `Cookie` | ✅ |
-| Cookies depuis un fichier | `-b cookies.txt` | ❌ warning |
+| Cookies depuis un fichier (format Netscape, `#HttpOnly_` inclus) | `-b cookies.txt` | ✅ Node (filtrage domaine / chemin / expiration / secure, comme curl) / 🟡 navigateur via `readFile` |
 | Écriture du cookie jar | `-c, --cookie-jar` | ⚪ info (propre au CLI) |
 | Ignorer les cookies de session | `-j, --junk-session-cookies` | ⚪ |
 
@@ -115,9 +116,9 @@ et le statut de chacun dans le parser `urban-http`.
 
 | Cas d'usage | Options | Statut |
 |---|---|---|
-| Ignorer la vérification TLS | `-k, --insecure` | ✅ Node (undici) / ❌ navigateur (impossible) |
+| Ignorer la vérification TLS | `-k, --insecure` | ✅ Node (paquet `undici` requis : `npm install undici`) / ❌ navigateur (impossible) |
 | CA / certificat client / clé | `--cacert, --cert (-E), --key` | ❌ warning |
-| Proxy | `-x, --proxy, --proxy-user (-U)` | ❌ warning (possible côté Node via `undici.ProxyAgent`, non câblé en v1) |
+| Proxy HTTP(S), avec authentification | `-x, --proxy, --proxy-user (-U)` | ✅ Node via `undici.ProxyAgent` (paquet `undici` requis) / ❌ navigateur |
 | Version HTTP | `--http1.1, --http2, --http3` | ⚪ négociée par la plateforme, conservée à titre informatif |
 | IPv4/IPv6, versions TLS | `-4, -6, --tlsv1.2, --tlsv1.3` | ⚪ |
 | DNS personnalisé, socket Unix, interface | `--resolve, --connect-to, --unix-socket, --interface` | ❌ warning |

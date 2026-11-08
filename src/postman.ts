@@ -369,7 +369,11 @@ function convertAuth(
       return undefined; // déjà matérialisée en en-tête/query
     }
     case "digest":
-      warnings.push({ code: "unsupported-auth", message: "Auth Digest : non prise en charge (négociation challenge/réponse).", level: "warning" });
+      warnings.push({
+        code: "digest-handshake",
+        message: "Auth Digest : la négociation challenge/réponse (MD5/SHA-256, qop=auth) est gérée par execute() en deux requêtes.",
+        level: "info",
+      });
       return { kind: "digest", username: get("username"), password: get("password") };
     case "ntlm":
       warnings.push({ code: "unsupported-auth", message: "Auth NTLM : non prise en charge.", level: "warning" });

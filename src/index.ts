@@ -18,6 +18,11 @@ export { toFetch, toFetchCode, authHeader } from "./to-fetch.js";
 export type { FetchPlan, ToFetchOptions } from "./to-fetch.js";
 export { execute } from "./execute.js";
 export type { ExecuteOptions, ExecuteResult } from "./execute.js";
+export { expandCurlGlobs, GlobError, GLOB_LIMIT } from "./glob.js";
+export { parseDigestChallenge, buildDigestAuthorization, md5Hex } from "./digest.js";
+export type { DigestChallenge, DigestCredentials, DigestOptions } from "./digest.js";
+export { parseNetscapeCookies, cookiesForUrl } from "./cookies.js";
+export type { CookieEntry } from "./cookies.js";
 export type {
   AuthSpec,
   BodyKind,

@@ -21,10 +21,18 @@ var UrbanHttp = (() => {
   // src/index.ts
   var index_exports = {};
   __export(index_exports, {
+    GLOB_LIMIT: () => GLOB_LIMIT,
+    GlobError: () => GlobError,
     authHeader: () => authHeader,
+    buildDigestAuthorization: () => buildDigestAuthorization,
+    cookiesForUrl: () => cookiesForUrl,
     execute: () => execute,
+    expandCurlGlobs: () => expandCurlGlobs,
     isPostmanCollection: () => isPostmanCollection,
+    md5Hex: () => md5Hex,
     parseCurl: () => parseCurl,
+    parseDigestChallenge: () => parseDigestChallenge,
+    parseNetscapeCookies: () => parseNetscapeCookies,
     parsePostman: () => parsePostman,
     toFetch: () => toFetch,
     toFetchCode: () => toFetchCode,
@@ -183,6 +191,83 @@ var UrbanHttp = (() => {
     return tokens.slice(start);
   }
 
+  // src/glob.ts
+  var GlobError = class extends Error {
+  };
+  var GLOB_LIMIT = 500;
+  function expandCurlGlobs(url, limit = GLOB_LIMIT) {
+    const segments = [];
+    let literal = "";
+    let i = 0;
+    const flushLiteral = () => {
+      if (literal) {
+        segments.push([literal]);
+        literal = "";
+      }
+    };
+    while (i < url.length) {
+      const c = url[i];
+      if (c === "{") {
+        const end = url.indexOf("}", i + 1);
+        if (end === -1) throw new GlobError(`accolade "{" non ferm\xE9e dans l'URL`);
+        flushLiteral();
+        segments.push(url.slice(i + 1, end).split(","));
+        i = end + 1;
+      } else if (c === "[") {
+        const end = url.indexOf("]", i + 1);
+        if (end === -1) throw new GlobError(`crochet "[" non ferm\xE9 dans l'URL`);
+        flushLiteral();
+        segments.push(expandRange(url.slice(i + 1, end)));
+        i = end + 1;
+      } else if (c === "}" || c === "]") {
+        throw new GlobError(`"${c}" sans ouvrant correspondant dans l'URL`);
+      } else {
+        literal += c;
+        i++;
+      }
+    }
+    flushLiteral();
+    let total = 1;
+    for (const seg of segments) total *= seg.length;
+    if (total > limit) {
+      throw new GlobError(`le globbing produirait ${total} URLs (limite du SDK : ${limit})`);
+    }
+    let results = [""];
+    for (const seg of segments) {
+      const next = [];
+      for (const prefix of results) for (const choice of seg) next.push(prefix + choice);
+      results = next;
+    }
+    return results;
+  }
+  function expandRange(spec) {
+    const numeric = /^(\d+)-(\d+)(?::(\d+))?$/.exec(spec);
+    if (numeric) {
+      const [, startStr, endStr, stepStr] = numeric;
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
+      const step = stepStr ? parseInt(stepStr, 10) : 1;
+      if (step <= 0 || end < start) throw new GlobError(`plage num\xE9rique invalide : [${spec}]`);
+      const width = startStr.startsWith("0") ? startStr.length : 0;
+      const out = [];
+      for (let v = start; v <= end; v += step) {
+        out.push(width > 0 ? String(v).padStart(width, "0") : String(v));
+      }
+      return out;
+    }
+    const alpha = /^([a-zA-Z])-([a-zA-Z])(?::(\d+))?$/.exec(spec);
+    if (alpha) {
+      const start = alpha[1].charCodeAt(0);
+      const end = alpha[2].charCodeAt(0);
+      const step = alpha[3] ? parseInt(alpha[3], 10) : 1;
+      if (step <= 0 || end < start) throw new GlobError(`plage alphab\xE9tique invalide : [${spec}]`);
+      const out = [];
+      for (let v = start; v <= end; v += step) out.push(String.fromCharCode(v));
+      return out;
+    }
+    throw new GlobError(`plage invalide : [${spec}] (attendu [1-10], [01-10], [a-z], avec :pas optionnel)`);
+  }
+
   // src/model.ts
   function defaultOptions() {
     return {
@@ -204,6 +289,8 @@ var UrbanHttp = (() => {
       formFields: [],
       formIsMultipart: false,
       cookies: [],
+      cookieFiles: [],
+      globoff: false,
       jsonMode: false,
       options: defaultOptions(),
       warnings: []
@@ -261,7 +348,7 @@ var UrbanHttp = (() => {
       takesValue: false,
       handler: (st) => {
         st.authKindOverride = "digest";
-        warn(st, "unsupported-auth", "--digest : l'authentification Digest n\xE9cessite une n\xE9gociation challenge/r\xE9ponse non prise en charge par fetch.", "--digest");
+        warn(st, "digest-handshake", "--digest : la n\xE9gociation challenge/r\xE9ponse (MD5/SHA-256, qop=auth) est g\xE9r\xE9e par execute() en deux requ\xEAtes.", "--digest", "info");
       }
     },
     "ntlm": {
@@ -312,10 +399,10 @@ var UrbanHttp = (() => {
       takesValue: true,
       handler: (st, v) => {
         st.options.proxy = v;
-        warn(st, "unsupported-option", "--proxy : fetch ne permet pas de configurer un proxy par requ\xEAte (possible c\xF4t\xE9 Node via undici.ProxyAgent).", "--proxy");
+        warn(st, "node-only-option", "--proxy : appliqu\xE9 c\xF4t\xE9 Node via undici.ProxyAgent (paquet undici requis) ; sans effet dans un navigateur.", "--proxy", "info");
       }
     },
-    "proxy-user": { takesValue: true, handler: unsupported("--proxy-user", "authentification proxy") },
+    "proxy-user": { takesValue: true, handler: (st, v) => st.options.proxyUser = v },
     "noproxy": { takesValue: true, handler: noop },
     "http1.0": { takesValue: false, handler: setHttpVersion("1.0") },
     "http1.1": { takesValue: false, handler: setHttpVersion("1.1") },
@@ -366,7 +453,7 @@ var UrbanHttp = (() => {
     "fail-with-body": { takesValue: false, handler: noop },
     "styled-output": { takesValue: false, handler: noop },
     // --- Divers -------------------------------------------------------------------
-    "globoff": { takesValue: false, handler: noop },
+    "globoff": { takesValue: false, handler: (st) => st.globoff = true },
     "config": { takesValue: true, handler: unsupported("--config", "fichier de configuration curl") },
     "next": { takesValue: false, handler: noop },
     // géré en amont (séparateur de groupes)
@@ -551,7 +638,8 @@ var UrbanHttp = (() => {
     if (v.includes("=")) {
       st.cookies.push(v);
     } else {
-      warn(st, "unsupported-option", `-b ${v} : lecture d'un fichier de cookies non prise en charge (passez les cookies sous forme "nom=valeur").`, "-b");
+      st.cookieFiles.push(v);
+      warn(st, "file-reference", `-b ${v} : fichier de cookies (format Netscape), lu au moment de l'ex\xE9cution (Node) ou via l'option readFile.`, "-b", "info");
     }
   }
   function parseCurl(command) {
@@ -681,7 +769,32 @@ var UrbanHttp = (() => {
     }
   }
   function buildRequests(st) {
-    return st.urls.map((rawUrl) => buildOne(st, rawUrl, [...st.warnings]));
+    const out = [];
+    for (const rawUrl of st.urls) {
+      let expanded = [rawUrl];
+      let globWarning;
+      if (!st.globoff && /[{}[\]]/.test(rawUrl)) {
+        try {
+          expanded = expandCurlGlobs(rawUrl);
+        } catch (e) {
+          if (e instanceof GlobError) {
+            globWarning = {
+              code: "url-globbing",
+              message: `Globbing non d\xE9velopp\xE9 (${e.message}) : URL utilis\xE9e telle quelle. Utilisez -g pour d\xE9sactiver le globbing.`,
+              level: "warning"
+            };
+          } else {
+            throw e;
+          }
+        }
+      }
+      for (const url of expanded) {
+        const warnings = [...st.warnings];
+        if (globWarning) warnings.push(globWarning);
+        out.push(buildOne(st, url, warnings));
+      }
+    }
+    return out;
   }
   function buildOne(st, rawUrl, warnings) {
     const options = { ...st.options };
@@ -691,9 +804,6 @@ var UrbanHttp = (() => {
     if (url && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url)) {
       url = "http://" + url;
       pushWarn(warnings, "default-scheme", `Pas de sch\xE9ma dans l'URL : "http://" ajout\xE9 (comme curl).`, void 0, "info");
-    }
-    if (/[{}[\]]/.test(rawUrl)) {
-      pushWarn(warnings, "url-globbing", "L'URL contient des caract\xE8res de globbing curl ({...} ou [...]) : le globbing n'est pas d\xE9velopp\xE9.", void 0, "warning");
     }
     let body;
     let bodyContentType;
@@ -761,6 +871,7 @@ var UrbanHttp = (() => {
       headers,
       body,
       auth,
+      cookieFiles: st.cookieFiles.length > 0 ? [...st.cookieFiles] : void 0,
       options,
       warnings
     };
@@ -1036,7 +1147,11 @@ var UrbanHttp = (() => {
         return void 0;
       }
       case "digest":
-        warnings.push({ code: "unsupported-auth", message: "Auth Digest : non prise en charge (n\xE9gociation challenge/r\xE9ponse).", level: "warning" });
+        warnings.push({
+          code: "digest-handshake",
+          message: "Auth Digest : la n\xE9gociation challenge/r\xE9ponse (MD5/SHA-256, qop=auth) est g\xE9r\xE9e par execute() en deux requ\xEAtes.",
+          level: "info"
+        });
         return { kind: "digest", username: get("username"), password: get("password") };
       case "ntlm":
         warnings.push({ code: "unsupported-auth", message: "Auth NTLM : non prise en charge.", level: "warning" });
@@ -1052,6 +1167,70 @@ var UrbanHttp = (() => {
   }
   function encodeForm(s) {
     return encodeURIComponent(s).replace(/%20/g, "+");
+  }
+
+  // src/cookies.ts
+  function parseNetscapeCookies(text) {
+    const entries = [];
+    for (let line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const httpOnly = line.startsWith("#HttpOnly_");
+      if (httpOnly) line = line.slice("#HttpOnly_".length);
+      else if (line.startsWith("#")) continue;
+      const fields = line.split("	");
+      if (fields.length >= 7) {
+        const [domain, flag, path, secure, expires, name, ...valueParts] = fields;
+        entries.push({
+          domain: (domain ?? "").replace(/^\./, ""),
+          includeSubdomains: (domain ?? "").startsWith(".") || (flag ?? "").toUpperCase() === "TRUE",
+          path: path || "/",
+          secure: (secure ?? "").toUpperCase() === "TRUE",
+          expires: parseInt(expires ?? "0", 10) || 0,
+          name: name ?? "",
+          value: valueParts.join("	")
+        });
+      } else if (fields.length === 1 && line.includes("=") && !line.includes(" ")) {
+        const eq = line.indexOf("=");
+        entries.push({
+          domain: "",
+          includeSubdomains: true,
+          path: "/",
+          secure: false,
+          expires: 0,
+          name: line.slice(0, eq),
+          value: line.slice(eq + 1)
+        });
+      }
+    }
+    return entries;
+  }
+  function cookiesForUrl(entries, url, now = Date.now()) {
+    let host = "";
+    let path = "/";
+    let isHttps = false;
+    try {
+      const u = new URL(url);
+      host = u.hostname.toLowerCase();
+      path = u.pathname || "/";
+      isHttps = u.protocol === "https:";
+    } catch {
+      return "";
+    }
+    const selected = [];
+    for (const e of entries) {
+      if (e.expires !== 0 && e.expires * 1e3 < now) continue;
+      if (e.secure && !isHttps) continue;
+      if (e.domain) {
+        const domain = e.domain.toLowerCase();
+        const matches = host === domain || e.includeSubdomains && host.endsWith("." + domain);
+        if (!matches) continue;
+      }
+      if (e.path && e.path !== "/") {
+        if (!(path === e.path || path.startsWith(e.path.endsWith("/") ? e.path : e.path + "/"))) continue;
+      }
+      if (e.name) selected.push(`${e.name}=${e.value}`);
+    }
+    return selected.join("; ");
   }
 
   // src/to-fetch.ts
@@ -1090,6 +1269,20 @@ var UrbanHttp = (() => {
         return void 0;
       }
     };
+    if (req.cookieFiles && req.cookieFiles.length > 0) {
+      const resolved = [];
+      for (const file of req.cookieFiles) {
+        const content = read(file);
+        if (content === void 0) continue;
+        const text = typeof content === "string" ? content : new TextDecoder().decode(content);
+        const cookieStr = cookiesForUrl(parseNetscapeCookies(text), req.url);
+        if (cookieStr) resolved.push(cookieStr);
+      }
+      if (resolved.length > 0) {
+        const existing = headers.get("cookie");
+        headers.set("Cookie", [existing, ...resolved].filter(Boolean).join("; "));
+      }
+    }
     let body;
     const b = req.body;
     if (b) {
@@ -1198,20 +1391,234 @@ var UrbanHttp = (() => {
     return lines.join("\n");
   }
 
+  // src/digest.ts
+  function parseDigestChallenge(header) {
+    const idx = header.search(/(^|[,\s])digest\s/i);
+    if (idx === -1) return void 0;
+    const rest = header.slice(header.toLowerCase().indexOf("digest", idx) + "digest".length);
+    const params = {};
+    const re = /([a-zA-Z0-9_-]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,]+))/g;
+    let m;
+    while ((m = re.exec(rest)) !== null) {
+      const key = m[1].toLowerCase();
+      const value = m[2] !== void 0 ? m[2].replace(/\\(.)/g, "$1") : m[3] ?? "";
+      params[key] = value;
+    }
+    if (!params["realm"] && !params["nonce"]) return void 0;
+    return {
+      realm: params["realm"] ?? "",
+      nonce: params["nonce"] ?? "",
+      qop: params["qop"],
+      opaque: params["opaque"],
+      algorithm: params["algorithm"],
+      stale: params["stale"]?.toLowerCase() === "true"
+    };
+  }
+  async function buildDigestAuthorization(challenge, creds, method, uri, opts = {}) {
+    const algorithm = (challenge.algorithm ?? "MD5").toUpperCase();
+    const sess = algorithm.endsWith("-SESS");
+    const base = sess ? algorithm.slice(0, -5) : algorithm;
+    let hash;
+    if (base === "MD5") hash = async (s) => md5Hex(s);
+    else if (base === "SHA-256") hash = sha256Hex;
+    else return void 0;
+    let qop;
+    if (challenge.qop) {
+      const offered = challenge.qop.split(",").map((q) => q.trim().toLowerCase());
+      if (offered.includes("auth")) qop = "auth";
+      else return void 0;
+    }
+    const cnonce = opts.cnonce ?? randomCnonce();
+    const nc = opts.nc ?? "00000001";
+    let ha1 = await hash(`${creds.username}:${challenge.realm}:${creds.password}`);
+    if (sess) ha1 = await hash(`${ha1}:${challenge.nonce}:${cnonce}`);
+    const ha2 = await hash(`${method.toUpperCase()}:${uri}`);
+    const response = qop ? await hash(`${ha1}:${challenge.nonce}:${nc}:${cnonce}:${qop}:${ha2}`) : await hash(`${ha1}:${challenge.nonce}:${ha2}`);
+    const parts = [
+      `username="${escapeQuoted(creds.username)}"`,
+      `realm="${escapeQuoted(challenge.realm)}"`,
+      `nonce="${escapeQuoted(challenge.nonce)}"`,
+      `uri="${uri}"`
+    ];
+    if (challenge.algorithm) parts.push(`algorithm=${challenge.algorithm}`);
+    if (qop) parts.push(`qop=${qop}`, `nc=${nc}`, `cnonce="${cnonce}"`);
+    parts.push(`response="${response}"`);
+    if (challenge.opaque) parts.push(`opaque="${escapeQuoted(challenge.opaque)}"`);
+    return `Digest ${parts.join(", ")}`;
+  }
+  function escapeQuoted(s) {
+    return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+  function randomCnonce() {
+    const bytes = new Uint8Array(16);
+    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return toHex(bytes);
+  }
+  function toHex(bytes) {
+    let out = "";
+    for (const b of bytes) out += b.toString(16).padStart(2, "0");
+    return out;
+  }
+  async function sha256Hex(s) {
+    const data = new TextEncoder().encode(s);
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    return toHex(new Uint8Array(digest));
+  }
+  var MD5_S = [
+    7,
+    12,
+    17,
+    22,
+    7,
+    12,
+    17,
+    22,
+    7,
+    12,
+    17,
+    22,
+    7,
+    12,
+    17,
+    22,
+    5,
+    9,
+    14,
+    20,
+    5,
+    9,
+    14,
+    20,
+    5,
+    9,
+    14,
+    20,
+    5,
+    9,
+    14,
+    20,
+    4,
+    11,
+    16,
+    23,
+    4,
+    11,
+    16,
+    23,
+    4,
+    11,
+    16,
+    23,
+    4,
+    11,
+    16,
+    23,
+    6,
+    10,
+    15,
+    21,
+    6,
+    10,
+    15,
+    21,
+    6,
+    10,
+    15,
+    21,
+    6,
+    10,
+    15,
+    21
+  ];
+  var MD5_K = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32) | 0);
+  function md5Hex(input) {
+    const msg = new TextEncoder().encode(input);
+    const bitLen = msg.length * 8;
+    const padded = new Uint8Array((msg.length + 8 >> 6) + 1 << 6);
+    padded.set(msg);
+    padded[msg.length] = 128;
+    const view = new DataView(padded.buffer);
+    view.setUint32(padded.length - 8, bitLen >>> 0, true);
+    view.setUint32(padded.length - 4, Math.floor(bitLen / 2 ** 32), true);
+    let a0 = 1732584193, b0 = 4023233417, c0 = 2562383102, d0 = 271733878;
+    const M = new Uint32Array(16);
+    for (let block = 0; block < padded.length; block += 64) {
+      for (let i = 0; i < 16; i++) M[i] = view.getUint32(block + i * 4, true);
+      let A = a0, B = b0, C = c0, D = d0;
+      for (let i = 0; i < 64; i++) {
+        let F, g;
+        if (i < 16) {
+          F = B & C | ~B & D;
+          g = i;
+        } else if (i < 32) {
+          F = D & B | ~D & C;
+          g = (5 * i + 1) % 16;
+        } else if (i < 48) {
+          F = B ^ C ^ D;
+          g = (3 * i + 5) % 16;
+        } else {
+          F = C ^ (B | ~D);
+          g = 7 * i % 16;
+        }
+        const tmp = D;
+        D = C;
+        C = B;
+        const sum = A + F + MD5_K[i] + M[g] | 0;
+        const s = MD5_S[i];
+        B = B + (sum << s | sum >>> 32 - s) | 0;
+        A = tmp;
+      }
+      a0 = a0 + A | 0;
+      b0 = b0 + B | 0;
+      c0 = c0 + C | 0;
+      d0 = d0 + D | 0;
+    }
+    const out = new Uint8Array(16);
+    const outView = new DataView(out.buffer);
+    outView.setUint32(0, a0 >>> 0, true);
+    outView.setUint32(4, b0 >>> 0, true);
+    outView.setUint32(8, c0 >>> 0, true);
+    outView.setUint32(12, d0 >>> 0, true);
+    return toHex(out);
+  }
+
   // src/execute.ts
   var RETRYABLE_STATUS = /* @__PURE__ */ new Set([408, 429, 500, 502, 503, 504]);
+  function isNode() {
+    const proc = globalThis.process;
+    return !!proc?.versions?.node;
+  }
   async function execute(req, opts = {}) {
+    if (!opts.readFile && isNode()) {
+      try {
+        const moduleName = "node:fs";
+        const fs = await import(
+          /* @vite-ignore */
+          moduleName
+        );
+        opts = { ...opts, readFile: (path) => fs.readFileSync(path) };
+      } catch {
+      }
+    }
     const plan = toFetch(req, opts);
     const issues = [...plan.issues];
     const doFetch = opts.fetchImpl ?? fetch;
-    await applyInsecure(req, plan, issues);
+    await applyDispatcher(req, plan, issues);
     const maxAttempts = 1 + Math.max(0, req.options.retry ?? 0);
     let attempt = 0;
     let lastError;
     while (attempt < maxAttempts) {
       attempt++;
       try {
-        const response = await doFetch(plan.url, plan.init);
+        let response = await doFetch(plan.url, plan.init);
+        if (response.status === 401 && req.auth?.kind === "digest" && req.auth.username !== void 0) {
+          const retried = await answerDigestChallenge(req, plan, response, doFetch, issues);
+          if (retried) response = retried;
+        }
         if (attempt < maxAttempts && RETRYABLE_STATUS.has(response.status)) {
           await delay(retryDelayMs(req, attempt));
           continue;
@@ -1235,25 +1642,88 @@ var UrbanHttp = (() => {
   function delay(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
-  async function applyInsecure(req, plan, issues) {
-    if (!req.options.insecure) return;
-    const proc = globalThis.process;
-    if (!proc?.versions?.node) {
-      issues.push("-k/--insecure : impossible de d\xE9sactiver la v\xE9rification TLS dans un navigateur.");
+  async function answerDigestChallenge(req, plan, response, doFetch, issues) {
+    let challengeHeader = null;
+    try {
+      challengeHeader = response.headers.get("www-authenticate");
+    } catch {
+    }
+    if (!challengeHeader) {
+      issues.push(
+        "Digest : challenge WWW-Authenticate illisible. Dans un navigateur, le serveur doit l'exposer via Access-Control-Expose-Headers (CORS)."
+      );
+      return void 0;
+    }
+    const challenge = parseDigestChallenge(challengeHeader);
+    if (!challenge) {
+      issues.push("Digest : le serveur n'a pas renvoy\xE9 de challenge Digest exploitable.");
+      return void 0;
+    }
+    let uri;
+    try {
+      const u = new URL(plan.url);
+      uri = u.pathname + u.search;
+    } catch {
+      uri = plan.url;
+    }
+    const authorization = await buildDigestAuthorization(
+      challenge,
+      { username: req.auth?.username ?? "", password: req.auth?.password ?? "" },
+      req.method,
+      uri
+    );
+    if (!authorization) {
+      issues.push(
+        `Digest : algorithme "${challenge.algorithm ?? "MD5"}" / qop "${challenge.qop ?? ""}" non pris en charge (support\xE9s : MD5, SHA-256, qop=auth).`
+      );
+      return void 0;
+    }
+    const headers = new Headers(plan.init.headers);
+    headers.set("Authorization", authorization);
+    return doFetch(plan.url, { ...plan.init, headers });
+  }
+  async function applyDispatcher(req, plan, issues) {
+    const needsProxy = !!req.options.proxy;
+    const needsInsecure = req.options.insecure;
+    if (!needsProxy && !needsInsecure) return;
+    if (!isNode()) {
+      if (needsProxy) issues.push("-x/--proxy : un navigateur ne permet pas de choisir un proxy par requ\xEAte.");
+      if (needsInsecure) issues.push("-k/--insecure : impossible de d\xE9sactiver la v\xE9rification TLS dans un navigateur.");
       return;
     }
+    let undici;
     try {
       const moduleName = "undici";
-      const undici = await import(
+      undici = await import(
         /* @vite-ignore */
         moduleName
       );
-      plan.init.dispatcher = new undici.Agent({
-        connect: { rejectUnauthorized: false }
-      });
     } catch {
-      issues.push("-k/--insecure : le module undici n'est pas disponible, la v\xE9rification TLS reste active.");
+      issues.push("Le paquet undici n'est pas install\xE9 : --proxy et --insecure sont ignor\xE9s (npm install undici).");
+      return;
     }
+    if (needsProxy) {
+      let uri = req.options.proxy;
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(uri)) uri = "http://" + uri;
+      const options = { uri };
+      if (req.options.proxyUser) {
+        options.token = "Basic " + toBase642(req.options.proxyUser);
+      }
+      if (needsInsecure) {
+        options.requestTls = { rejectUnauthorized: false };
+      }
+      plan.init.dispatcher = new undici.ProxyAgent(options);
+      return;
+    }
+    plan.init.dispatcher = new undici.Agent({
+      connect: { rejectUnauthorized: false }
+    });
+  }
+  function toBase642(s) {
+    const bytes = new TextEncoder().encode(s);
+    let bin = "";
+    for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin);
   }
   return __toCommonJS(index_exports);
 })();

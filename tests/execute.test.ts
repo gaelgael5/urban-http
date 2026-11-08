@@ -45,6 +45,34 @@ describe("execute", () => {
     expect(calls).toBe(1);
   });
 
+  it("-x/--proxy : dispatcher undici.ProxyAgent côté Node", async () => {
+    let seenInit: RequestInit | undefined;
+    const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
+      seenInit = init;
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+
+    const req = first(`curl -x proxy.local:8080 -U bob:pass https://e.com`);
+    const result = await execute(req, { fetchImpl });
+    expect(result.response.status).toBe(200);
+
+    const { ProxyAgent } = await import("undici");
+    expect((seenInit as { dispatcher?: unknown })?.dispatcher).toBeInstanceOf(ProxyAgent);
+  });
+
+  it("-k/--insecure : dispatcher undici.Agent côté Node", async () => {
+    let seenInit: RequestInit | undefined;
+    const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
+      seenInit = init;
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+
+    const result = await execute(first(`curl -k https://e.com`), { fetchImpl });
+    expect(result.issues).toHaveLength(0);
+    const { Agent } = await import("undici");
+    expect((seenInit as { dispatcher?: unknown })?.dispatcher).toBeInstanceOf(Agent);
+  });
+
   it("relance l'erreur réseau après épuisement des retries", async () => {
     let calls = 0;
     const fetchImpl = (async () => {

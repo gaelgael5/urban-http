@@ -187,10 +187,10 @@ describe("parseCurl — auth et cookies", () => {
     expect(authHeader(r)).toEqual(["Authorization", "Bearer TOKEN123"]);
   });
 
-  it("--digest émet un warning", () => {
+  it("--digest : auth digest + info sur la négociation", () => {
     const r = one(`curl --digest -u a:b https://e.com`);
     expect(r.auth?.kind).toBe("digest");
-    expect(r.warnings.some((w) => w.code === "unsupported-auth")).toBe(true);
+    expect(r.warnings.some((w) => w.code === "digest-handshake" && w.level === "info")).toBe(true);
   });
 
   it("-b nom=valeur devient l'en-tête Cookie", () => {
@@ -198,9 +198,10 @@ describe("parseCurl — auth et cookies", () => {
     expect(header(r, "Cookie")).toBe("session=abc; theme=dark");
   });
 
-  it("-b fichier émet un warning", () => {
+  it("-b fichier : référence de fichier de cookies", () => {
     const r = one(`curl -b cookies.txt https://e.com`);
-    expect(r.warnings.some((w) => w.code === "unsupported-option")).toBe(true);
+    expect(r.cookieFiles).toEqual(["cookies.txt"]);
+    expect(r.warnings.some((w) => w.code === "file-reference")).toBe(true);
   });
 });
 
@@ -219,10 +220,11 @@ describe("parseCurl — options de transfert", () => {
     expect(r.options.retryDelayMs).toBe(2000);
   });
 
-  it("--proxy est signalé non supporté", () => {
-    const r = one(`curl -x http://proxy:8080 https://e.com`);
+  it("--proxy et --proxy-user sont conservés (appliqués côté Node)", () => {
+    const r = one(`curl -x http://proxy:8080 -U bob:pass https://e.com`);
     expect(r.options.proxy).toBe("http://proxy:8080");
-    expect(r.warnings.some((w) => w.code === "unsupported-option")).toBe(true);
+    expect(r.options.proxyUser).toBe("bob:pass");
+    expect(r.warnings.some((w) => w.code === "node-only-option")).toBe(true);
   });
 
   it("-T donne un PUT de fichier", () => {

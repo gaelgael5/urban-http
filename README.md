@@ -66,7 +66,11 @@ L'inventaire complet des cas d'usage curl et leur statut (✅ supporté, 🟡 pa
 
 En résumé : syntaxe shell complète (quotes, continuations bash `\` et cmd `^`, `$'...'`),
 méthodes, en-têtes, tous les `--data-*`, `--json`, `-G`, multipart `-F`, Basic/Bearer,
-cookies inline, redirections `-L`, timeout `-m`, retries `--retry`, URLs multiples et `--next`.
+**Digest** (négociation en deux requêtes, MD5/SHA-256), cookies inline **et fichiers de
+cookies Netscape**, **globbing d'URL** (`{a,b}`, `[1-10]`), redirections `-L`, timeout `-m`,
+retries `--retry`, URLs multiples et `--next`. Côté Node, `-x/--proxy` et `-k/--insecure`
+sont appliqués via [undici](https://www.npmjs.com/package/undici) (dépendance optionnelle :
+`npm install undici`).
 
 ## Site de démonstration
 
@@ -89,6 +93,6 @@ npm run build          # tsc -> dist/ + bundle navigateur
 
 ## Feuille de route
 
-- Proxy côté Node via `undici.ProxyAgent`.
 - Variables dynamiques Postman (`{{$guid}}`, `{{$timestamp}}`…).
+- Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
 - Générateurs de code supplémentaires (axios, Python requests…).

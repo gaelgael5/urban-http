@@ -83,8 +83,10 @@ export interface RequestOptions {
   retry?: number;
   /** --retry-delay, en millisecondes. */
   retryDelayMs?: number;
-  /** -x / --proxy (non appliqué par fetch : signalé en warning). */
+  /** -x / --proxy (appliqué côté Node via undici.ProxyAgent). */
   proxy?: string;
+  /** -U / --proxy-user "user:pass" (Basic sur le proxy, côté Node). */
+  proxyUser?: string;
   /** --http1.1 / --http2 / --http3 (informatif). */
   httpVersion?: string;
 }
@@ -102,6 +104,8 @@ export interface HttpRequestModel {
   headers: Array<[string, string]>;
   body?: BodySpec;
   auth?: AuthSpec;
+  /** Fichiers de cookies (-b fichier), lus au moment de l'exécution (format Netscape). */
+  cookieFiles?: string[];
   options: RequestOptions;
   /** Avertissements propres à cette requête. */
   warnings: ParseWarning[];
