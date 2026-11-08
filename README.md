@@ -67,6 +67,8 @@ const variables = parsePostmanEnvironment(envJson);
 Une variable non résolue est **laissée telle quelle et signalée par un warning**
 (`unresolved-variable`, `unresolved-shell-variable`), jamais remplacée par du vide.
 Sans `options.variables`, les `$` des commandes curl ne sont pas touchés.
+Guide complet (contextes de quoting, priorités, codes de warning) :
+**[docs/variables.md](docs/variables.md)**.
 
 ## Collections Postman
 

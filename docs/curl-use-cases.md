@@ -146,6 +146,7 @@ ou d'un export Postman passe telle quelle.
 ## 11. Variables
 
 Activées en passant `options.variables` à `parseCurl(commande, options)`.
+Guide complet : [variables.md](variables.md).
 
 | Cas d'usage | Exemple | Statut |
 |---|---|---|

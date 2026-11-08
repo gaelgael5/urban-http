@@ -36,6 +36,8 @@ La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases
 
 ## Variables
 
+Guide complet (mécanismes, priorités, codes de warning) : [variables.md](variables.md).
+
 | Cas d'usage | Statut |
 |---|---|
 | Variables de collection (`variable`) | ✅ substituées dans URL, en-têtes, corps, auth |
