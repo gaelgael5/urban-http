@@ -34,7 +34,7 @@ le SDK les analyse en requête structurée et les exécute via une bibliothèque
 | **TFTP** | transfert UDP par blocs | ✅ | node:dgram |
 | **FILE** | lecture/écriture de fichier local | ✅ | node:fs |
 | **SMB / SMBS** | partage de fichiers | ✅ | @marsaud/smb2 |
-| **WS / WSS** | WebSocket | ❌ | API `WebSocket` |
+| **WS / WSS** | WebSocket (envoi/réception) | ✅ | API `WebSocket` native (navigateur + Node ≥ 22) |
 | **IMAP(S)** | lecture de boîte mail | ❌ | imapflow… |
 | **SCP** | copie via SSH | ❌ | ssh2 (manuel) |
 | **LDAP(S), TELNET, DICT, GOPHER(S), RTSP, RTMP** | divers | ❌ | — |
@@ -159,12 +159,12 @@ quelle : `-o`, `-O`, `-J`, `-D`, `-i`, `-s`, `-S`, `-v`, `-#`, `-w/--write-out`,
 - **Tout le périmètre « appel HTTP applicatif » de curl est couvert** : requête,
   corps, auth (Basic/Bearer/Digest), cookies, variables, redirections, retries,
   timeout, globbing, multipart — plus l'import Postman.
-- **Les principaux protocoles non-HTTP sont couverts** par des adaptateurs Node
-  optionnels (SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB) — voir
-  [protocols.md](protocols.md). Le cœur reste compartimenté : ces adaptateurs ne
-  sont chargés qu'à l'usage, et le navigateur n'exécute que HTTP.
-- **Restent hors périmètre** WebSocket (→ API native), IMAP, LDAP, TELNET,
-  DICT, GOPHER, RTSP… : signalés par `unsupported-protocol` avec une alternative.
+- **Les principaux protocoles non-HTTP sont couverts** par des adaptateurs
+  (SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB côté Node ; WebSocket côté
+  Node **et** navigateur) — voir [protocols.md](protocols.md). Le cœur reste
+  compartimenté : les adaptateurs à dépendance ne sont chargés qu'à l'usage.
+- **Restent hors périmètre** IMAP, LDAP, TELNET, DICT, GOPHER, RTSP, SCP… :
+  signalés par `unsupported-protocol` avec une alternative.
 - Quelques fonctions HTTP non couvertes (auth-int, certificats clients, SOCKS,
   conditionnelles `-z`) sont listées dans la
   [feuille de route](../README.md#feuille-de-route) ou signalées par warning.

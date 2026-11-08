@@ -3,7 +3,8 @@
 SDK pour transformer une commande **curl** ou une **collection Postman** en
 **appels exécutables** dans une application — Node ≥ 18 ou navigateur.
 HTTP via `fetch`, et les autres protocoles de curl (SMTP, FTP, SFTP, POP3,
-MQTT, TFTP, FILE, SMB) via des adaptateurs Node optionnels.
+MQTT, TFTP, FILE, SMB, WebSocket) via des adaptateurs — WebSocket tournant aussi
+dans le navigateur.
 
 ```
 commande curl ───▶ parseCurl() ────┐
@@ -73,7 +74,7 @@ Sans `options.variables`, les `$` des commandes curl ne sont pas touchés.
 Guide complet (contextes de quoting, priorités, codes de warning) :
 **[docs/variables.md](docs/variables.md)**.
 
-## Autres protocoles (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB)
+## Autres protocoles (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket)
 
 ```ts
 import { run, registerDefaultNodeAdapters } from "urban-http";
@@ -147,6 +148,6 @@ npm run build          # tsc -> dist/ + bundle navigateur
 
 ## Feuille de route
 
-- Protocoles restants : WebSocket (API native), IMAP, SCP.
+- Protocoles restants : IMAP, SCP, LDAP.
 - Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
 - Générateurs de code supplémentaires (axios, Python requests…).

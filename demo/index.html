@@ -367,7 +367,11 @@ TOKEN=TOKEN_DEMO</textarea>
 <script>
 (function () {
   "use strict";
-  const { parseCurl, parsePostman, parseCommand, toFetch, toFetchCode, execute } = window.UrbanHttp;
+  const { parseCurl, parsePostman, parseCommand, toFetch, toFetchCode, execute, executeProtocol, registerBrowserAdapters } = window.UrbanHttp;
+
+  // WebSocket fonctionne dans le navigateur : on enregistre son adaptateur
+  // pour pouvoir exécuter réellement les commandes ws:// / wss://.
+  try { registerBrowserAdapters(); } catch (e) { /* bundle sans protocoles */ }
 
   /* Collection Postman d'exemple (sérialisée dans les exemples ci-dessous) */
   const POSTMAN_SAMPLE = {
@@ -483,10 +487,11 @@ TOKEN=TOKEN_DEMO</textarea>
       { label: "TFTP (firmware)", cmd: `curl tftp://10.0.0.1/firmware.bin` },
       { label: "Fichier local (file://)", cmd: `curl file:///etc/hostname` },
       { label: "Partage SMB", cmd: `curl smb://serveur.example.com/partage/dossier/rapport.xlsx` },
+      { label: "WebSocket (exécutable)", cmd: `curl wss://echo.websocket.org/ -d "bonjour"` },
     ]},
     { group: "Sans adaptateur : signalé", items: [
-      { label: "WebSocket (ws://)", cmd: `curl ws://echo.example.com/socket`, warn: true },
       { label: "IMAP", cmd: `curl imaps://mail.example.com/INBOX`, warn: true },
+      { label: "LDAP", cmd: `curl ldap://annuaire.example.com/dc=exemple`, warn: true },
     ]},
     { group: "Limites signalées", items: [
       { label: "Certificat client (--cert)", cmd: `curl --cert client.pem --key client.key https://httpbin.org/get`, warn: true },
@@ -590,6 +595,10 @@ TOKEN=TOKEN_DEMO</textarea>
     if (r.smtp) { rows.push(["de", r.smtp.from || "—"]); rows.push(["destinataires", r.smtp.recipients.join(", ") || "—"]); }
     if (r.ftp && r.ftp.quote.length) rows.push(["commandes -Q", r.ftp.quote.join(" ; ")]);
     if (r.mqtt) { rows.push(["qos", r.mqtt.qos]); rows.push(["retain", r.mqtt.retain ? "oui" : "non"]); }
+    if (r.ws) {
+      if (r.ws.subprotocols.length) rows.push(["sous-protocoles", r.ws.subprotocols.join(", ")]);
+      if (r.ws.messages.length) rows.push(["messages", r.ws.messages.join(" | ")]);
+    }
     if (r.payload) rows.push(["charge", r.payload.filePath ? "@" + r.payload.filePath : (r.payload.text || "")]);
     if (r.output) rows.push(["sortie -o", r.output]);
 
@@ -698,9 +707,29 @@ TOKEN=TOKEN_DEMO</textarea>
   async function executeCurrent() {
     if (currentProtocol) {
       const panel = $("resp-panel");
+      const out = $("response");
       panel.hidden = false;
-      $("response").innerHTML = `<p class="muted">Les protocoles ${esc(currentProtocol.scheme)}:// s'exécutent côté Node
-        (registerDefaultNodeAdapters() + run()), pas depuis le navigateur. Le code ci-dessus montre l'appel.</p>`;
+      const scheme = currentProtocol.scheme;
+      // WebSocket s'exécute dans le navigateur ; les autres protocoles sont Node.
+      if ((scheme === "ws" || scheme === "wss") && currentProtocol.request) {
+        out.innerHTML = `<p class="muted">Connexion WebSocket en cours…</p>`;
+        try {
+          // On exécute la requête déjà analysée (conserve les -d et sous-protocoles)
+          const result = await executeProtocol(currentProtocol.request, {});
+          out.innerHTML = `
+            <div class="status-line"><span class="dot" style="background:${result.ok ? "var(--ok)" : "var(--err)"}"></span>
+              <strong>${esc(result.summary)}</strong></div>
+            ${result.body ? `<p class="section-label">Message reçu</p><pre class="code">${esc(new TextDecoder().decode(result.body))}</pre>` : ""}
+            ${result.issues.length ? `<ul class="warnings" style="margin-top:10px">${result.issues.map((i) => `<li class="info">${esc(i)}</li>`).join("")}</ul>` : ""}`;
+        } catch (e) {
+          out.innerHTML = `<div class="status-line"><span class="dot" style="background:var(--err)"></span><strong>Échec</strong></div>
+            <p>${esc(e.message)}</p><p class="muted">Vérifiez que le serveur WebSocket est joignable et accepte les connexions depuis cette page.</p>`;
+        }
+        return;
+      }
+      out.innerHTML = `<p class="muted">Les protocoles ${esc(scheme)}:// s'exécutent côté Node
+        (registerDefaultNodeAdapters() + run()), pas depuis le navigateur. Le code ci-dessus montre l'appel.
+        WebSocket, lui, s'exécute ici.</p>`;
       return;
     }
     if (!currentResult || currentResult.requests.length === 0) return;

@@ -41,6 +41,7 @@ export {
   registeredSchemes,
   executeProtocol,
   registerDefaultNodeAdapters,
+  registerBrowserAdapters,
   fileAdapter,
   smtpAdapter,
   ftpAdapter,
@@ -49,6 +50,7 @@ export {
   mqttAdapter,
   tftpAdapter,
   smbAdapter,
+  wsAdapter,
 } from "./protocols/index.js";
 export type {
   ProtocolScheme,

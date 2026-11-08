@@ -8,7 +8,12 @@ protocole est un **adaptateur optionnel** qui s'appuie sur une bibliothèque
 éprouvée, chargée seulement à la première exécution.
 
 Protocoles couverts : **SMTP/SMTPS, FTP/FTPS, SFTP, POP3/POP3S, MQTT/MQTTS,
-TFTP, FILE, SMB/SMBS**.
+TFTP, FILE, SMB/SMBS, WS/WSS (WebSocket)**.
+
+> **WebSocket est un cas à part** : il s'appuie sur l'API `WebSocket` standard,
+> native dans le navigateur **et** dans Node ≥ 22. C'est donc le seul protocole
+> non-HTTP qui s'exécute aussi côté navigateur, sans aucune dépendance. Le
+> playground l'exécute réellement.
 
 > Comme tout le SDK, une requête est **pilotée par la commande** que vous
 > écrivez : un adaptateur exécute une seule opération explicite (envoyer ce
@@ -55,9 +60,10 @@ celles dont vous avez besoin.
 | POP3 / POP3S | — (node:net / node:tls) | aucune |
 | TFTP | — (node:dgram) | aucune |
 | FILE | — (node:fs) | aucune |
+| WS / WSS | — (API WebSocket native) | aucune |
 
-POP3, TFTP et FILE sont implémentés directement sur les modules natifs de Node,
-sans dépendance.
+POP3, TFTP, FILE et WebSocket sont implémentés sans dépendance (modules natifs
+de Node, ou API WebSocket standard).
 
 ## Correspondance commande → opération
 
@@ -72,6 +78,7 @@ sans dépendance.
 | `curl tftp://h/f` / `-T f tftp://h/f` | téléchargement / téléversement TFTP |
 | `curl file:///chemin` / `-T src file:///dest` | lecture / écriture d'un fichier local |
 | `curl smb://h/partage/f` / `-T f smb://h/partage/f` / `-l` | lecture / écriture / listage SMB |
+| `curl ws://h/chemin -d "msg"` / `ws://h/chemin` | WebSocket : envoi de message(s) puis lecture de la réponse / lecture du 1er message (sous-protocole via `-H "Sec-WebSocket-Protocol: ..."`) |
 
 Options communes reconnues : `-u user:pass` (ou `user:pass@hôte` dans l'URL),
 `-k/--insecure`, `--ssl`/`--ssl-reqd` (TLS opportuniste / requis), `-o fichier`
@@ -120,14 +127,19 @@ await run("curl ftp://h/f.txt", {
 ## Côté navigateur
 
 Le **parsing** protocolaire (`parseCommand`, `parseProtocolCommand`) est pur
-texte et fonctionne dans le navigateur. L'**exécution** des protocoles non-HTTP
-nécessite Node (sockets TCP/UDP) : dans un navigateur, seul HTTP s'exécute (via
-fetch). Le playground illustre les deux : il analyse n'importe quelle commande,
-et exécute celles en HTTP.
+texte et fonctionne dans le navigateur. Pour l'**exécution** :
+
+- **HTTP** s'exécute via `fetch` ;
+- **WebSocket** s'exécute aussi (API `WebSocket` native) — appelez
+  `registerBrowserAdapters()` puis `run("curl ws://...")` ;
+- les autres protocoles (sockets TCP/UDP) nécessitent Node.
+
+Le playground illustre les trois : il analyse n'importe quelle commande, et
+exécute celles en HTTP et en WebSocket.
 
 ## Hors périmètre
 
-Les protocoles sans adaptateur (WebSocket, IMAP, LDAP, DICT, GOPHER, RTSP…)
-restent signalés par le warning `unsupported-protocol`, comme décrit dans
-[curl-coverage.md](curl-coverage.md). Pour WebSocket, utilisez l'API `WebSocket`
-native ; pour IMAP, une bibliothèque dédiée (imapflow).
+Les protocoles sans adaptateur (IMAP, LDAP, DICT, GOPHER, RTSP, SCP…) restent
+signalés par le warning `unsupported-protocol`, comme décrit dans
+[curl-coverage.md](curl-coverage.md) — pour IMAP, une bibliothèque dédiée
+(imapflow) ; pour SCP, ssh2.

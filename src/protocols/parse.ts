@@ -29,6 +29,7 @@ const VALUE_OPTIONS = new Set([
   "-o", "--output",
   "-u", "--user",
   "-d", "--data", "--data-raw", "--data-binary", "--data-ascii",
+  "-H", "--header",
   "-Q", "--quote",
   "-r", "--range",
   "-m", "--max-time",
@@ -39,7 +40,7 @@ const VALUE_OPTIONS = new Set([
 ]);
 
 const KNOWN_SCHEMES = new Set<ProtocolScheme>([
-  "smtp", "smtps", "ftp", "ftps", "sftp", "pop3", "pop3s", "mqtt", "mqtts", "tftp", "file", "smb", "smbs",
+  "smtp", "smtps", "ftp", "ftps", "sftp", "pop3", "pop3s", "mqtt", "mqtts", "tftp", "file", "smb", "smbs", "ws", "wss",
 ]);
 
 /**
@@ -101,6 +102,7 @@ interface ScannedOptions {
   upload?: string;
   output?: string;
   data: string[];
+  headers: Array<[string, string]>;
   quote: string[];
   range?: string;
   maxTimeMs?: number;
@@ -142,6 +144,8 @@ function buildProtocolRequest(
   else if (opts.listOnly) direction = "list";
   else if ((scheme === "mqtt" || scheme === "mqtts") && opts.data.length > 0) direction = "publish";
   else if (scheme === "mqtt" || scheme === "mqtts") direction = "subscribe";
+  else if ((scheme === "ws" || scheme === "wss") && opts.data.length > 0) direction = "publish";
+  else if (scheme === "ws" || scheme === "wss") direction = "subscribe";
 
   const payload = resolvePayload(opts, scheme, direction);
 
@@ -185,6 +189,16 @@ function buildProtocolRequest(
   if (scheme === "mqtt" || scheme === "mqtts") {
     req.mqtt = { qos: opts.mqttQos ?? 0, retain: opts.mqttRetain };
   }
+  if (scheme === "ws" || scheme === "wss") {
+    const subprotocols: string[] = [];
+    const otherHeaders: Array<[string, string]> = [];
+    for (const [n, v] of opts.headers) {
+      if (n.toLowerCase() === "sec-websocket-protocol") subprotocols.push(...v.split(",").map((s) => s.trim()).filter(Boolean));
+      else otherHeaders.push([n, v]);
+    }
+    req.ws = { subprotocols, messages: opts.data };
+    req.headers = otherHeaders;
+  }
 
   warnings.push(...variableWarnings(varCtx));
   return req;
@@ -193,6 +207,7 @@ function buildProtocolRequest(
 function scanOptions(tokens: string[], warnings: ParseWarning[]): ScannedOptions {
   const o: ScannedOptions = {
     data: [],
+    headers: [],
     quote: [],
     insecure: false,
     ssl: false,
@@ -214,6 +229,14 @@ function scanOptions(tokens: string[], warnings: ParseWarning[]): ScannedOptions
       case "-o": case "--output": o.output = next(i); i++; break;
       case "-d": case "--data": case "--data-raw": case "--data-binary": case "--data-ascii": {
         const v = next(i); if (v !== undefined) o.data.push(v); i++; break;
+      }
+      case "-H": case "--header": {
+        const v = next(i); i++;
+        if (v !== undefined) {
+          const colon = v.indexOf(":");
+          if (colon > 0) o.headers.push([v.slice(0, colon).trim(), v.slice(colon + 1).trim()]);
+        }
+        break;
       }
       case "-Q": case "--quote": { const v = next(i); if (v !== undefined) o.quote.push(v); i++; break; }
       case "-r": case "--range": o.range = next(i); i++; break;
@@ -244,6 +267,8 @@ function resolvePayload(opts: ScannedOptions, scheme: ProtocolScheme, direction:
   if (opts.upload !== undefined) {
     return opts.upload.startsWith("@") ? { filePath: opts.upload.slice(1) } : { filePath: opts.upload };
   }
+  // WebSocket porte ses messages dans ws.messages, pas dans payload.
+  if (scheme === "ws" || scheme === "wss") return undefined;
   if (opts.data.length > 0 && (direction === "send" || direction === "publish" || scheme === "tftp")) {
     const joined = opts.data.map((d) => (d.startsWith("@") ? `\u0000FILE\u0000${d.slice(1)}` : d)).join("\n");
     const fileMatch = /^\u0000FILE\u0000(.+)$/.exec(joined);

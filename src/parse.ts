@@ -945,7 +945,7 @@ function protocolHint(scheme: string): string {
   switch (scheme) {
     case "ws":
     case "wss":
-      return " Pour du WebSocket, utilisez l'API WebSocket (navigateur et Node).";
+      return " WebSocket est pris en charge : utilisez run() / parseCommand() au lieu de parseCurl().";
     case "smtp":
     case "smtps":
       return " Pour envoyer un mail côté Node, utilisez par exemple nodemailer.";

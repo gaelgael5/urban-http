@@ -27,7 +27,9 @@ export type ProtocolScheme =
   | "tftp"
   | "file"
   | "smb"
-  | "smbs";
+  | "smbs"
+  | "ws"
+  | "wss";
 
 /** Sens du transfert déduit de la commande. */
 export type TransferDirection =
@@ -84,6 +86,9 @@ export interface ProtocolRequest {
   /** Plage d'octets (-r/--range) pour un téléchargement partiel. */
   range?: string;
 
+  /** En-têtes de la commande (-H), utilisés par la poignée de main WebSocket. */
+  headers?: Array<[string, string]>;
+
   /** Options spécifiques au protocole. */
   smtp?: {
     from?: string;
@@ -101,6 +106,12 @@ export interface ProtocolRequest {
     /** Niveau de qualité de service (par défaut 0). */
     qos: number;
     retain: boolean;
+  };
+  ws?: {
+    /** Sous-protocoles (Sec-WebSocket-Protocol). */
+    subprotocols: string[];
+    /** Messages texte à envoyer après l'ouverture (chaque -d). */
+    messages: string[];
   };
 
   warnings: ParseWarning[];
@@ -164,9 +175,18 @@ export const DEFAULT_PORTS: Record<ProtocolScheme, number> = {
   file: 0,
   smb: 445,
   smbs: 445,
+  ws: 80,
+  wss: 443,
 };
 
 /** true si le schéma implique TLS d'emblée. */
 export function isSecureScheme(scheme: ProtocolScheme): boolean {
-  return scheme === "smtps" || scheme === "ftps" || scheme === "pop3s" || scheme === "mqtts" || scheme === "smbs";
+  return (
+    scheme === "smtps" ||
+    scheme === "ftps" ||
+    scheme === "pop3s" ||
+    scheme === "mqtts" ||
+    scheme === "smbs" ||
+    scheme === "wss"
+  );
 }

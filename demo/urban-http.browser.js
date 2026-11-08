@@ -60,6 +60,7 @@ var UrbanHttp = (() => {
     parsePostmanEnvironment: () => parsePostmanEnvironment,
     parseProtocolCommand: () => parseProtocolCommand,
     pop3Adapter: () => pop3Adapter,
+    registerBrowserAdapters: () => registerBrowserAdapters,
     registerDefaultNodeAdapters: () => registerDefaultNodeAdapters,
     registerProtocol: () => registerProtocol,
     registeredSchemes: () => registeredSchemes,
@@ -73,7 +74,8 @@ var UrbanHttp = (() => {
     toFetchCode: () => toFetchCode,
     tokenize: () => tokenize,
     tokenizeFull: () => tokenizeFull,
-    unregisterProtocol: () => unregisterProtocol
+    unregisterProtocol: () => unregisterProtocol,
+    wsAdapter: () => wsAdapter
   });
 
   // src/tokenize.ts
@@ -1184,7 +1186,7 @@ var UrbanHttp = (() => {
     switch (scheme) {
       case "ws":
       case "wss":
-        return " Pour du WebSocket, utilisez l'API WebSocket (navigateur et Node).";
+        return " WebSocket est pris en charge : utilisez run() / parseCommand() au lieu de parseCurl().";
       case "smtp":
       case "smtps":
         return " Pour envoyer un mail c\xF4t\xE9 Node, utilisez par exemple nodemailer.";
@@ -2057,10 +2059,12 @@ var UrbanHttp = (() => {
     tftp: 69,
     file: 0,
     smb: 445,
-    smbs: 445
+    smbs: 445,
+    ws: 80,
+    wss: 443
   };
   function isSecureScheme(scheme) {
-    return scheme === "smtps" || scheme === "ftps" || scheme === "pop3s" || scheme === "mqtts" || scheme === "smbs";
+    return scheme === "smtps" || scheme === "ftps" || scheme === "pop3s" || scheme === "mqtts" || scheme === "smbs" || scheme === "wss";
   }
 
   // src/protocols/parse.ts
@@ -2076,6 +2080,8 @@ var UrbanHttp = (() => {
     "--data-raw",
     "--data-binary",
     "--data-ascii",
+    "-H",
+    "--header",
     "-Q",
     "--quote",
     "-r",
@@ -2104,7 +2110,9 @@ var UrbanHttp = (() => {
     "tftp",
     "file",
     "smb",
-    "smbs"
+    "smbs",
+    "ws",
+    "wss"
   ]);
   function parseProtocolCommand(command, options = {}) {
     const { tokens: rawTokens } = tokenizeFull(command, { shellVariables: options.variables });
@@ -2161,6 +2169,8 @@ var UrbanHttp = (() => {
     else if (opts.listOnly) direction = "list";
     else if ((scheme === "mqtt" || scheme === "mqtts") && opts.data.length > 0) direction = "publish";
     else if (scheme === "mqtt" || scheme === "mqtts") direction = "subscribe";
+    else if ((scheme === "ws" || scheme === "wss") && opts.data.length > 0) direction = "publish";
+    else if (scheme === "ws" || scheme === "wss") direction = "subscribe";
     const payload = resolvePayload(opts, scheme, direction);
     const req = {
       scheme,
@@ -2201,12 +2211,23 @@ var UrbanHttp = (() => {
     if (scheme === "mqtt" || scheme === "mqtts") {
       req.mqtt = { qos: opts.mqttQos ?? 0, retain: opts.mqttRetain };
     }
+    if (scheme === "ws" || scheme === "wss") {
+      const subprotocols = [];
+      const otherHeaders = [];
+      for (const [n, v] of opts.headers) {
+        if (n.toLowerCase() === "sec-websocket-protocol") subprotocols.push(...v.split(",").map((s) => s.trim()).filter(Boolean));
+        else otherHeaders.push([n, v]);
+      }
+      req.ws = { subprotocols, messages: opts.data };
+      req.headers = otherHeaders;
+    }
     warnings.push(...variableWarnings(varCtx));
     return req;
   }
   function scanOptions(tokens, warnings) {
     const o = {
       data: [],
+      headers: [],
       quote: [],
       insecure: false,
       ssl: false,
@@ -2244,6 +2265,16 @@ var UrbanHttp = (() => {
           const v = next(i);
           if (v !== void 0) o.data.push(v);
           i++;
+          break;
+        }
+        case "-H":
+        case "--header": {
+          const v = next(i);
+          i++;
+          if (v !== void 0) {
+            const colon = v.indexOf(":");
+            if (colon > 0) o.headers.push([v.slice(0, colon).trim(), v.slice(colon + 1).trim()]);
+          }
           break;
         }
         case "-Q":
@@ -2325,6 +2356,7 @@ var UrbanHttp = (() => {
     if (opts.upload !== void 0) {
       return opts.upload.startsWith("@") ? { filePath: opts.upload.slice(1) } : { filePath: opts.upload };
     }
+    if (scheme === "ws" || scheme === "wss") return void 0;
     if (opts.data.length > 0 && (direction === "send" || direction === "publish" || scheme === "tftp")) {
       const joined = opts.data.map((d) => d.startsWith("@") ? `\0FILE\0${d.slice(1)}` : d).join("\n");
       const fileMatch = /^\u0000FILE\u0000(.+)$/.exec(joined);
@@ -3241,11 +3273,100 @@ var UrbanHttp = (() => {
     }
   };
 
+  // src/protocols/ws.ts
+  function defaultFactory6(url, subprotocols) {
+    const WS = globalThis.WebSocket;
+    if (!WS) {
+      throw new Error(
+        "WebSocket indisponible : Node \u2265 22 expose un WebSocket global, sinon installez 'ws' et passez un clientFactory."
+      );
+    }
+    return subprotocols.length > 0 ? new WS(url, subprotocols) : new WS(url);
+  }
+  async function messageToBytes(data) {
+    if (typeof data === "string") return new TextEncoder().encode(data);
+    if (data instanceof Uint8Array) return data;
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (typeof data.arrayBuffer === "function") {
+      return new Uint8Array(await data.arrayBuffer());
+    }
+    return new TextEncoder().encode(String(data));
+  }
+  var wsAdapter = {
+    name: "ws",
+    schemes: ["ws", "wss"],
+    async execute(req, ctx) {
+      const issues = [];
+      if (req.headers && req.headers.length > 0) {
+        issues.push("En-t\xEAtes de poign\xE9e de main ignor\xE9s : l'API WebSocket standard n'accepte que les sous-protocoles.");
+      }
+      const factory = ctx.clientFactory ?? defaultFactory6;
+      const subprotocols = req.ws?.subprotocols ?? [];
+      const messages = req.ws?.messages ?? [];
+      const timeoutMs = req.timeoutMs ?? 3e4;
+      const socket = factory(req.url, subprotocols);
+      const body = await new Promise((resolve, reject) => {
+        let settled = false;
+        const received = [];
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          try {
+            socket.close(1e3);
+          } catch {
+          }
+          resolve(value);
+        };
+        const timer = setTimeout(() => {
+          if (messages.length > 0 && received.length === 0) {
+            issues.push("Aucune r\xE9ponse re\xE7ue dans le d\xE9lai imparti apr\xE8s l'envoi.");
+            finish(void 0);
+          } else {
+            issues.push("D\xE9lai d'attente atteint.");
+            finish(received[0]);
+          }
+        }, timeoutMs);
+        socket.addEventListener("open", () => {
+          for (const m of messages) socket.send(m);
+          if (messages.length === 0) issues.push("Connexion ouverte sans message \xE0 envoyer : lecture du premier message re\xE7u.");
+        });
+        socket.addEventListener("message", (ev) => {
+          messageToBytes(ev.data).then((bytes) => {
+            received.push(bytes);
+            finish(bytes);
+          });
+        });
+        socket.addEventListener("close", () => {
+          if (!settled) finish(received[0]);
+        });
+        socket.addEventListener("error", () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(new Error(`\xC9chec de la connexion WebSocket \xE0 ${req.url}.`));
+        });
+      });
+      if (body && req.output && req.output !== "-" && ctx.writeFile) await ctx.writeFile(req.output, body);
+      return {
+        scheme: req.scheme,
+        ok: true,
+        summary: body ? `R\xE9ponse re\xE7ue (${body.byteLength} octets)${messages.length ? ` apr\xE8s ${messages.length} message(s) envoy\xE9(s)` : ""}` : `${messages.length} message(s) envoy\xE9(s), aucune r\xE9ponse`,
+        body,
+        meta: { messagesSent: messages.length, subprotocols, received: body ? 1 : 0 },
+        issues
+      };
+    }
+  };
+
   // src/protocols/index.ts
   function registerDefaultNodeAdapters() {
-    for (const adapter of [fileAdapter, smtpAdapter, ftpAdapter, sftpAdapter, pop3Adapter, mqttAdapter, tftpAdapter, smbAdapter]) {
+    for (const adapter of [fileAdapter, smtpAdapter, ftpAdapter, sftpAdapter, pop3Adapter, mqttAdapter, tftpAdapter, smbAdapter, wsAdapter]) {
       registerProtocol(adapter);
     }
+  }
+  function registerBrowserAdapters() {
+    registerProtocol(wsAdapter);
   }
   return __toCommonJS(index_exports);
 })();
