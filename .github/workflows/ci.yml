@@ -16,7 +16,8 @@ concurrency:
 jobs:
   test:
     name: Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # Épinglé sur 22.04 : ubuntu-latest (26.04) ne fournit plus de build Python 3.9/3.10.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
