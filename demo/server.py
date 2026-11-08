@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from urban_http import (  # noqa: E402
     execute,
     is_postman_collection,
+    openapi_to_curl,
     parse_command,
     parse_postman,
     register_default_adapters,
@@ -122,6 +123,24 @@ def _analyze(command: str, variables: dict) -> dict:
     return {"kind": "protocol", "protocol": _protocol_request(parsed.scheme, parsed.request, parsed.warnings)}
 
 
+def _openapi(contract: str) -> dict:
+    operations = openapi_to_curl(contract)
+    return {"operations": [
+        {
+            "method": op.method, "path": op.path, "operation_id": op.operation_id,
+            "summary": op.summary, "curl": op.curl, "variables": op.variables,
+            "example_variables": op.example_variables, "content_type": op.content_type,
+            "parameters": [
+                {"name": p.name, "location": p.location, "required": p.required,
+                 "type": p.type, "example": p.example, "placeholder": p.placeholder}
+                for p in op.parameters
+            ],
+            "body_example": op.body_example,
+        }
+        for op in operations
+    ]}
+
+
 def _run_http(command: str, variables: dict) -> dict:
     parsed = parse_command(command, variables)
     if parsed.kind != "http" or not parsed.requests:
@@ -169,6 +188,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, _analyze(command, variables))
             elif self.path == "/api/run":
                 self._send(200, _run_http(command, variables))
+            elif self.path == "/api/openapi":
+                self._send(200, _openapi(payload.get("contract", "")))
             else:
                 self._send(404, {"error": "introuvable"})
         except Exception as e:  # noqa: BLE001

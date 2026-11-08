@@ -72,6 +72,17 @@ ul.warnings li code { font-family: var(--mono); font-size: 0.8rem; color: var(--
 .muted { color: var(--muted); }
 footer { max-width: 1200px; margin: 32px auto 0; color: var(--muted); font-size: 0.85rem; }
 [hidden] { display: none !important; }
+.modebar { display: flex; gap: 8px; margin-bottom: 16px; }
+.modebar .mode { font: inherit; font-size: 0.9rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; cursor: pointer; color: var(--fg); }
+.modebar .mode.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.op { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+.op-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; background: var(--surface2); cursor: pointer; }
+.op-head .path { font-family: var(--mono); font-size: 0.9rem; word-break: break-all; }
+.op-head .sum { color: var(--muted); font-size: 0.85rem; }
+.op-head .load { margin-left: auto; font: inherit; font-size: 0.8rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.op-body { padding: 12px; display: none; }
+.op.open .op-body { display: block; }
+.op-body pre.code { margin: 0 0 8px; }
 </style>
 </head>
 <body>
@@ -87,46 +98,56 @@ footer { max-width: 1200px; margin: 32px auto 0; color: var(--muted); font-size:
   </nav>
 
   <main>
+    <div class="modebar">
+      <button class="mode active" data-mode="curl">curl / Postman</button>
+      <button class="mode" data-mode="openapi">Contrat OpenAPI</button>
+    </div>
+
     <section class="panel">
-      <div class="panel-h">Commande curl ou collection Postman</div>
+      <div class="panel-h" id="cmd-title">Commande curl ou collection Postman</div>
       <div class="panel-b">
         <textarea id="cmd" spellcheck="false">curl https://httpbin.org/get</textarea>
         <div class="toolbar">
           <button class="primary" id="btn-run">Exécuter (HTTP)</button>
-          <span class="note">L'analyse se fait en Python côté serveur ; l'exécution ne concerne que les requêtes HTTP.</span>
+          <span class="note" id="cmd-note">L'analyse se fait en Python côté serveur ; l'exécution ne concerne que les requêtes HTTP.</span>
         </div>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel curl-only">
       <div class="panel-h">Variables <span class="hint">une par ligne, clé=valeur — {{clé}} partout, $clé comme dans le shell</span></div>
       <div class="panel-b"><textarea id="vars" spellcheck="false">baseUrl=https://httpbin.org
 TOKEN=TOKEN_DEMO</textarea></div>
     </section>
 
-    <section class="panel">
+    <section class="panel openapi-only" id="openapi-panel" hidden>
+      <div class="panel-h">Opérations générées <span class="hint" id="openapi-count"></span></div>
+      <div class="panel-b" id="openapi-out"></div>
+    </section>
+
+    <section class="panel curl-only">
       <div class="panel-h">Requête analysée <span class="req-tabs" id="req-tabs"></span></div>
       <div class="panel-b" id="parsed"></div>
     </section>
 
-    <section class="panel" id="warn-panel" hidden>
+    <section class="panel curl-only" id="warn-panel" hidden>
       <div class="panel-h">Avertissements</div>
       <div class="panel-b"><ul class="warnings" id="warnings"></ul></div>
     </section>
 
-    <section class="panel">
+    <section class="panel curl-only">
       <div class="panel-h">Code Python généré</div>
       <div class="panel-b"><pre class="code" id="code"></pre></div>
     </section>
 
-    <section class="panel" id="resp-panel" hidden>
+    <section class="panel curl-only" id="resp-panel" hidden>
       <div class="panel-h">Réponse</div>
       <div class="panel-b" id="response"></div>
     </section>
   </main>
 </div>
 
-<footer>Paquet <strong>urban-http</strong> (Python) — parser curl/Postman → appel exécutable. Lancez ce site avec <code>python demo/server.py</code>.</footer>
+<footer>Paquet <strong>urban-http</strong> (Python) — parser curl/Postman, générateur OpenAPI → curl, appel exécutable. Lancez ce site avec <code>python demo/server.py</code>.</footer>
 
 <script>
 const EXAMPLES = [
@@ -188,7 +209,8 @@ function renderExamples() {
     document.querySelectorAll(".ex-group button.active").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     $("cmd").value = EXAMPLES[+btn.dataset.g].items[+btn.dataset.i].cmd;
-    analyze();
+    loadedOpenapiSample = false;
+    if (mode !== "curl") { setMode("curl"); } else { analyze(); }
   });
 }
 
@@ -277,9 +299,107 @@ async function runHttp() {
   } catch (e) { out.innerHTML = `<p>${esc(e.message)}</p>`; }
 }
 
+// --- Mode OpenAPI ---------------------------------------------------------
+const OPENAPI_SAMPLE = JSON.stringify({
+  openapi: "3.0.0",
+  servers: [{ url: "https://api.example.com/v1" }],
+  components: { schemas: {
+    Adresse: { type: "object", properties: { rue: { type: "string" }, code_postal: { type: "string" } } },
+    Utilisateur: { type: "object", properties: {
+      id: { type: "integer" }, nom: { type: "string" }, actif: { type: "boolean" },
+      cree_le: { type: "string", format: "date-time" }, naissance: { type: "string", format: "date" },
+      role: { type: "string", enum: ["admin", "user"] },
+      adresse: { $ref: "#/components/schemas/Adresse" },
+      tags: { type: "array", items: { type: "string" } },
+    } },
+  } },
+  paths: {
+    "/users/{id}": { get: { operationId: "getUser", summary: "Récupère un utilisateur", parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "integer" } },
+      { name: "expand", in: "query", schema: { type: "string" } },
+      { name: "X-Trace", in: "header", schema: { type: "string" } },
+    ] } },
+    "/users": { post: { operationId: "createUser", summary: "Crée un utilisateur",
+      requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Utilisateur" } } } } } },
+  },
+}, null, 2);
+
+let mode = "curl";
+let loadedOpenapiSample = false;
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll(".modebar .mode").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+  document.querySelectorAll(".curl-only").forEach(el => el.hidden = (m !== "curl"));
+  document.querySelectorAll(".openapi-only").forEach(el => el.hidden = (m !== "openapi"));
+  $("resp-panel").hidden = true;
+  if (m === "openapi") {
+    $("cmd-title").textContent = "Contrat OpenAPI (JSON)";
+    $("cmd-note").textContent = "Collez un contrat OpenAPI v3 : chaque opération devient une commande curl.";
+    $("btn-run").hidden = true;
+    if (!loadedOpenapiSample) { $("cmd").value = OPENAPI_SAMPLE; loadedOpenapiSample = true; }
+    analyzeOpenapi();
+  } else {
+    $("cmd-title").textContent = "Commande curl ou collection Postman";
+    $("cmd-note").textContent = "L'analyse se fait en Python côté serveur ; l'exécution ne concerne que les requêtes HTTP.";
+    $("btn-run").hidden = false;
+    if (loadedOpenapiSample && $("cmd").value === OPENAPI_SAMPLE) $("cmd").value = "curl https://httpbin.org/get";
+    analyze();
+  }
+}
+
+async function analyzeOpenapi() {
+  const out = $("openapi-out");
+  let data;
+  try {
+    const res = await fetch("/api/openapi", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contract: $("cmd").value }) });
+    data = await res.json();
+  } catch (e) { out.innerHTML = `<p style="color:var(--err)">Serveur injoignable : ${esc(e.message)}</p>`; return; }
+  if (data.error) { out.innerHTML = `<p style="color:var(--err)">Contrat invalide : ${esc(data.error)}</p>`; $("openapi-count").textContent = ""; return; }
+  const operations = data.operations || [];
+  $("openapi-count").textContent = `${operations.length} opération(s)`;
+  out.innerHTML = operations.map((op, i) => `
+    <div class="op" data-i="${i}">
+      <div class="op-head">
+        <span class="badge ${methodClass(op.method)}">${esc(op.method)}</span>
+        <span class="path">${esc(op.path)}</span>
+        ${op.summary ? `<span class="sum">${esc(op.summary)}</span>` : ""}
+        <button class="load" data-load="${i}">Charger dans l'éditeur ↑</button>
+      </div>
+      <div class="op-body">
+        <pre class="code">${esc(op.curl)}</pre>
+        ${op.parameters.length ? `<p class="section-label">Paramètres</p><table class="kv"><tr><th>nom</th><th>in</th><th>requis</th><th>type</th><th>exemple</th></tr>${op.parameters.map(p => `<tr><td>${esc(p.name)}</td><td>${esc(p.location)}</td><td>${p.required ? "oui" : "non"}</td><td>${esc(p.type)}</td><td>${esc(JSON.stringify(p.example))}</td></tr>`).join("")}</table>` : ""}
+        ${Object.keys(op.example_variables).length ? `<p class="section-label">Variables d'exemple</p><div class="chips">${Object.entries(op.example_variables).map(([k,v]) => `<span class="chip">${esc(k)}=${esc(v)}</span>`).join("")}</div>` : ""}
+        ${op.body_example !== null ? `<p class="section-label">Modèle du corps</p><pre class="code">${esc(JSON.stringify(op.body_example, null, 2))}</pre>` : ""}
+      </div>
+    </div>`).join("");
+
+  out.querySelectorAll(".op-head").forEach(h => h.addEventListener("click", (ev) => {
+    if (ev.target.closest("button.load")) return;
+    h.parentElement.classList.toggle("open");
+  }));
+  out.querySelectorAll("button.load").forEach(b => b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const op = operations[+b.dataset.load];
+    const varsText = Object.entries(op.example_variables).map(([k,v]) => `${k}=${v}`).join("\n");
+    setMode("curl");
+    $("cmd").value = op.curl;
+    $("vars").value = varsText;
+    loadedOpenapiSample = false;
+    analyze();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }));
+}
+
+document.querySelector(".modebar").addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button.mode"); if (!btn) return;
+  setMode(btn.dataset.mode);
+});
+
 let t;
-$("cmd").addEventListener("input", () => { clearTimeout(t); t = setTimeout(analyze, 200); });
-$("vars").addEventListener("input", () => { clearTimeout(t); t = setTimeout(analyze, 200); });
+function onInput() { clearTimeout(t); t = setTimeout(mode === "openapi" ? analyzeOpenapi : analyze, 250); }
+$("cmd").addEventListener("input", onInput);
+$("vars").addEventListener("input", onInput);
 $("btn-run").addEventListener("click", runHttp);
 renderExamples();
 analyze();
