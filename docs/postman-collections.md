@@ -1,8 +1,10 @@
-# Collections Postman — prise en charge
+# Postman collections — support
 
-`parse_postman()` importe le format **Postman Collection v2.0 / v2.1 (JSON)** et
-produit les mêmes `HttpRequestModel` que `parse_curl()` : tout l'aval
-(`prepare_request`, `execute`) fonctionne à l'identique.
+*(Version française : [postman-collections.fr.md](postman-collections.fr.md))*
+
+`parse_postman()` imports the **Postman Collection v2.0 / v2.1 (JSON)** format and
+produces the same `HttpRequestModel` as `parse_curl()`: everything downstream
+(`prepare_request`, `execute`) works identically.
 
 ```python
 from urban_http import parse_postman, is_postman_collection, execute
@@ -12,65 +14,65 @@ for req in result.requests:
     print(req.name, req.method, req.url)
 ```
 
-La légende des statuts est la même que dans [curl-use-cases.md](curl-use-cases.md).
+The status legend is the same as in [curl-use-cases.md](curl-use-cases.md).
 
-## Structure de la collection
+## Collection structure
 
-| Cas d'usage | Statut |
+| Use case | Status |
 |---|---|
-| Schéma Collection v2.0 et v2.1 | ✅ (autre schéma : warning, import au mieux) |
-| Dossiers imbriqués (`item` récursif) | ✅ (nom conservé dans `req.name`) |
-| Forme courte `request: "https://..."` | ✅ |
-| JSON invalide ou non-collection | ❌ erreur propre (`invalid-json`, `not-a-collection`) |
+| Collection schema v2.0 and v2.1 | ✅ (other schema: warning, best-effort import) |
+| Nested folders (recursive `item`) | ✅ (name kept in `req.name`) |
+| Short form `request: "https://..."` | ✅ |
+| Invalid JSON or non-collection | ❌ clean error (`invalid-json`, `not-a-collection`) |
 
-## URL et paramètres
+## URL and parameters
 
-| Cas d'usage | Statut |
+| Use case | Status |
 |---|---|
-| URL chaîne ou objet (`raw`, ou composée de `protocol/host/port/path`) | ✅ |
-| Paramètres de query (`url.query`), désactivés exclus | ✅ |
+| String or object URL (`raw`, or composed of `protocol/host/port/path`) | ✅ |
+| Query parameters (`url.query`), disabled ones excluded | ✅ |
 
 ## Variables
 
-Guide complet : [variables.md](variables.md).
+Full guide: [variables.md](variables.md).
 
-| Cas d'usage | Statut |
+| Use case | Status |
 |---|---|
-| Variables de collection (`variable`) | ✅ |
-| Valeurs externes via l'argument `variables` | ✅ prioritaires |
-| Export d'environnement Postman | ✅ via `parse_postman_environment(json)` |
-| Dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ |
-| Variable non résolue | 🟡 conservée + warning `unresolved-variable` |
+| Collection variables (`variable`) | ✅ |
+| External values via the `variables` argument | ✅ take priority |
+| Postman environment export | ✅ via `parse_postman_environment(json)` |
+| Dynamics `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ |
+| Unresolved variable | 🟡 kept + `unresolved-variable` warning |
 
-## En-têtes et corps
+## Headers and body
 
-| Cas d'usage | Statut |
+| Use case | Status |
 |---|---|
-| En-têtes (liste, désactivés exclus ; forme texte brut acceptée) | ✅ |
-| `raw` + `options.raw.language` → Content-Type déduit | ✅ |
-| `urlencoded` (paires encodées, désactivées exclues) | ✅ |
-| `formdata` (champs texte et fichiers, `contentType` par champ) | ✅ |
-| `file` (corps binaire) | ✅ |
-| `graphql` (query + variables → corps JSON) | ✅ |
+| Headers (list, disabled ones excluded; raw-text form accepted) | ✅ |
+| `raw` + `options.raw.language` → inferred Content-Type | ✅ |
+| `urlencoded` (encoded pairs, disabled ones excluded) | ✅ |
+| `formdata` (text and file fields, per-field `contentType`) | ✅ |
+| `file` (binary body) | ✅ |
+| `graphql` (query + variables → JSON body) | ✅ |
 
-## Authentification
+## Authentication
 
-| Type Postman | Statut |
+| Postman type | Status |
 |---|---|
 | `basic` | ✅ `Authorization: Basic ...` |
 | `bearer` | ✅ `Authorization: Bearer ...` |
-| `apikey` (in: header ou query) | ✅ |
+| `apikey` (in: header or query) | ✅ |
 | `noauth` | ✅ |
-| Héritage collection → dossier → requête | ✅ |
-| `digest` | ✅ via `execute()` (négociation en deux requêtes) |
+| collection → folder → request inheritance | ✅ |
+| `digest` | ✅ via `execute()` (two-request negotiation) |
 | `ntlm` | ❌ warning |
 | `oauth1`, `oauth2`, `awsv4`, `hawk`… | ❌ warning |
 
-## Comportement réseau
+## Network behavior
 
-| Cas d'usage | Statut |
+| Use case | Status |
 |---|---|
-| Redirections suivies par défaut (comportement Postman) | ✅ |
+| Redirects followed by default (Postman behavior) | ✅ |
 | `protocolProfileBehavior.followRedirects: false` | ✅ |
-| Scripts pre-request / tests | ❌ jamais exécutés — warning `scripts-not-executed` |
-| Exemples de réponse (`response`) | ⚪ ignorés |
+| pre-request / test scripts | ❌ never executed — `scripts-not-executed` warning |
+| Response examples (`response`) | ⚪ ignored |

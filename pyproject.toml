@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "urban-http"
-version = "0.1.0"
+version = "0.1.1"
 description = "Transformer une commande curl ou une collection Postman en appel exécutable (HTTP et autres protocoles)."
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -1,171 +1,172 @@
-# Panorama curl — ce qui est couvert, ce qui ne l'est pas
+# curl overview — what is covered, what is not
 
-curl est un couteau suisse multi-protocoles : il sait envoyer des mails (SMTP),
-transférer des fichiers (FTP, SFTP), lire des boîtes mail (IMAP, POP3), parler
-MQTT, TELNET, LDAP… **urban-http a un périmètre volontairement plus étroit :
-transformer une commande curl en appel HTTP applicatif (Python / `urllib`)**.
+*(Version française : [curl-coverage.fr.md](curl-coverage.fr.md))*
 
-Ce document fait le tour de **tout** ce que sait faire curl, domaine par domaine.
-La règle du SDK reste la même partout : ce qui est hors périmètre est **détecté
-et signalé par un warning à code stable**, jamais ignoré en silence.
+curl is a multi-protocol swiss-army knife: it can send mail (SMTP), transfer
+files (FTP, SFTP), read mailboxes (IMAP, POP3), speak MQTT, TELNET, LDAP…
+**urban-http has a deliberately narrower scope: turning a curl command into an
+application-level HTTP call (Python / `urllib`).**
 
-**Légende** : ✅ couvert · 🟡 partiel / approximé · ⚪ sans objet dans un SDK
-(option de confort du CLI, acceptée sans erreur) · ❌ hors périmètre, signalé.
+This document walks through **everything** curl can do, area by area. The SDK's
+rule is the same throughout: anything out of scope is **detected and reported by a
+stable-code warning**, never silently ignored.
+
+**Legend**: ✅ covered · 🟡 partial / approximated · ⚪ not applicable in an SDK
+(a CLI convenience option, accepted without error) · ❌ out of scope, reported.
 
 ---
 
-## 1. Protocoles
+## 1. Protocols
 
-Le cœur HTTP passe par `urllib` (bibliothèque standard). Les autres protocoles
-sont couverts par des **adaptateurs** (voir [protocols.md](protocols.md)) :
-le SDK les analyse en requête structurée et les exécute via une bibliothèque
-éprouvée. Les protocoles sans adaptateur produisent toujours le warning
-**`unsupported-protocol`** avec une alternative suggérée.
+The HTTP core goes through `urllib` (standard library). The other protocols are
+covered by **adapters** (see [protocols.md](protocols.md)): the SDK parses them
+into a structured request and runs them through a proven library. Protocols
+without an adapter always produce the **`unsupported-protocol`** warning with a
+suggested alternative.
 
-| Protocole | Ce que curl en fait | Statut | Moteur |
+| Protocol | What curl does with it | Status | Engine |
 |---|---|---|---|
-| **HTTP / HTTPS** | le cœur | ✅ | urllib (stdlib) |
-| **SMTP / SMTPS** | envoi de mails (`--mail-from`, `--mail-rcpt`, corps via `-T`) | ✅ | nodemailer |
-| **FTP / FTPS** | transfert de fichiers (`-Q`, `--ftp-create-dirs`, `-l`) | ✅ | basic-ftp |
-| **SFTP** | transfert via SSH | ✅ | paramiko (extra) |
-| **SCP** | copie via SSH | ✅ | paramiko (extra) |
-| **POP3 / POP3S** | lecture de boîte mail (liste, RETR n) | ✅ | poplib (stdlib) |
-| **IMAP / IMAPS** | boîte mail (dossiers, UIDs, fetch) | ✅ | imaplib (stdlib) |
-| **MQTT / MQTTS** | publier / lire un message | ✅ | mqtt.js |
-| **TFTP** | transfert UDP par blocs | ✅ | node:dgram |
-| **FILE** | lecture/écriture de fichier local | ✅ | node:fs |
-| **SMB / SMBS** | partage de fichiers | ✅ | @marsaud/smb2 |
-| **WS / WSS** | WebSocket (envoi/réception) | ✅ | websockets (extra) |
-| **LDAP(S), TELNET, DICT, GOPHER(S), RTSP, RTMP** | divers | ❌ | — |
+| **HTTP / HTTPS** | the core | ✅ | urllib (stdlib) |
+| **SMTP / SMTPS** | sending mail (`--mail-from`, `--mail-rcpt`, body via `-T`) | ✅ | smtplib (stdlib) |
+| **FTP / FTPS** | file transfer (`-Q`, `--ftp-create-dirs`, `-l`) | ✅ | ftplib (stdlib) |
+| **SFTP** | transfer over SSH | ✅ | paramiko (extra) |
+| **SCP** | copy over SSH | ✅ | paramiko (extra) |
+| **POP3 / POP3S** | mailbox reading (list, RETR n) | ✅ | poplib (stdlib) |
+| **IMAP / IMAPS** | mailbox (folders, UIDs, fetch) | ✅ | imaplib (stdlib) |
+| **MQTT / MQTTS** | publish / read a message | ✅ | paho-mqtt (extra) |
+| **TFTP** | block-based UDP transfer | ✅ | socket (stdlib) |
+| **FILE** | read/write a local file | ✅ | open (stdlib) |
+| **SMB / SMBS** | file share | ✅ | smbprotocol (extra) |
+| **WS / WSS** | WebSocket (send/receive) | ✅ | websockets (extra) |
+| **LDAP(S), TELNET, DICT, GOPHER(S), RTSP, RTMP** | misc | ❌ | — |
 
-Les options propres aux protocoles couverts sont interprétées (`--mail-from`,
+Options specific to the covered protocols are interpreted (`--mail-from`,
 `--mail-rcpt`, `-Q/--quote`, `-l/--list-only`, `--ssl`, `--ssl-reqd`, `-T`,
-`-o`…). Celles des protocoles encore hors périmètre (`-t/--telnet-option`…)
-restent signalées par `unsupported-protocol-option`.
+`-o`…). Those of the still-out-of-scope protocols (`-t/--telnet-option`…) remain
+reported through `unsupported-protocol-option`.
 
-## 2. Construction de la requête HTTP
+## 2. Building the HTTP request
 
-Détail complet : [curl-use-cases.md](curl-use-cases.md).
+Full detail: [curl-use-cases.md](curl-use-cases.md).
 
-| Domaine | Statut |
+| Area | Status |
 |---|---|
-| Syntaxe shell (quotes, continuations bash `\` / cmd `^`, `$'...'`, options groupées, `--opt=val`, `--no-*`) | ✅ |
-| Méthodes (`-X`, `-I`, `-G`, implicites), URLs multiples, `--next`, globbing `{a,b}` `[1-10]` | ✅ |
-| En-têtes (`-H`, valeur vide, suppression, `-A`, `-e`, `-r`, `--compressed`) | ✅ |
-| Corps : `-d`, `--data-raw/-binary/-urlencode`, `--json`, `-F` multipart, `-T`, fichiers `@` | ✅ |
-| `--url-query` (paramètres encodés ajoutés à l'URL, curl 7.87+) | ✅ |
-| `--request-target`, `--form-escape`, en-têtes multipart par partie | ❌ signalés |
+| Shell syntax (quotes, bash `\` / cmd `^` continuations, `$'...'`, grouped options, `--opt=val`, `--no-*`) | ✅ |
+| Methods (`-X`, `-I`, `-G`, implicit), multiple URLs, `--next`, globbing `{a,b}` `[1-10]` | ✅ |
+| Headers (`-H`, empty value, removal, `-A`, `-e`, `-r`, `--compressed`) | ✅ |
+| Body: `-d`, `--data-raw/-binary/-urlencode`, `--json`, `-F` multipart, `-T`, `@` files | ✅ |
+| `--url-query` (encoded params appended to the URL, curl 7.87+) | ✅ |
+| `--request-target`, `--form-escape`, per-part multipart headers | ❌ reported |
 
-## 3. Authentification
+## 3. Authentication
 
-| Mécanisme | Statut |
+| Mechanism | Status |
 |---|---|
 | Basic (`-u`), Bearer (`--oauth2-bearer`) | ✅ |
-| Digest (`--digest`) : MD5, MD5-sess, SHA-256, SHA-256-sess, qop=auth, RFC 2069 | ✅ via `execute()` (2 requêtes) |
-| Digest `qop=auth-int` | ❌ (hachage du corps requis) |
-| NTLM, Negotiate/Kerberos (`--ntlm`, `--negotiate`, `--krb`, `--delegation`) | ❌ (protocoles propriétaires multi-allers) |
-| AWS SigV4 (`--aws-sigv4`) | ❌ (signature non calculée) |
-| `.netrc` (`-n`, `--netrc`, `--netrc-file`, `--netrc-optional`) | ✅ (module `netrc`, auth Basic) |
+| Digest (`--digest`): MD5, MD5-sess, SHA-256, SHA-256-sess, qop=auth, RFC 2069 | ✅ via `execute()` (2 requests) |
+| Digest `qop=auth-int` | ❌ (body hashing required) |
+| NTLM, Negotiate/Kerberos (`--ntlm`, `--negotiate`, `--krb`, `--delegation`) | ❌ (proprietary multi-round protocols) |
+| AWS SigV4 (`--aws-sigv4`) | ❌ (signature not computed) |
+| `.netrc` (`-n`, `--netrc`, `--netrc-file`, `--netrc-optional`) | ✅ (`netrc` module, Basic auth) |
 
 ## 4. Cookies
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| Cookies inline (`-b "a=1"`) | ✅ |
-| Lecture d'un fichier Netscape (`-b cookies.txt`), filtrage domaine/chemin/expiration/secure | ✅ (`file_reader` injectable) |
-| Écriture du cookie jar (`-c`), moteur de session entre requêtes | ⚪ propre au CLI — l'application garde la main sur l'état |
+| Inline cookies (`-b "a=1"`) | ✅ |
+| Reading a Netscape file (`-b cookies.txt`), domain/path/expiry/secure filtering | ✅ (injectable `file_reader`) |
+| Writing the cookie jar (`-c`), session engine across requests | ⚪ CLI-specific — the application keeps state |
 | `-j/--junk-session-cookies` | ⚪ |
 
-## 5. TLS et certificats
+## 5. TLS and certificates
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| `-k/--insecure` | ✅ (contexte SSL non vérifié) |
-| CA personnalisée (`--cacert`, `--capath`), certificat client (`--cert`, `--key`, `--pass`) | ✅ (contexte `ssl`) |
-| Épinglage (`--pinnedpubkey`), ciphers (`--ciphers`, `--tls13-ciphers`) | ❌ / ⚪ |
-| Versions TLS (`--tlsv1.2`, `--tlsv1.3`) | ⚪ négociées par la plateforme |
+| `-k/--insecure` | ✅ (unverified SSL context) |
+| Custom CA (`--cacert`, `--capath`), client certificate (`--cert`, `--key`, `--pass`) | ✅ (`ssl` context) |
+| Pinning (`--pinnedpubkey`), ciphers (`--ciphers`, `--tls13-ciphers`) | ❌ / ⚪ |
+| TLS versions (`--tlsv1.2`, `--tlsv1.3`) | ⚪ negotiated by the platform |
 
 ## 6. Proxies
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| Proxy HTTP(S) (`-x/--proxy`), auth Basic proxy (`-U/--proxy-user`) | ✅ via `urllib.ProxyHandler` |
-| SOCKS (`--socks4`, `--socks4a`, `--socks5`, `--socks5-hostname`) | ❌ signalés |
+| HTTP(S) proxy (`-x/--proxy`), Basic proxy auth (`-U/--proxy-user`) | ✅ via `urllib.ProxyHandler` |
+| SOCKS (`--socks4`, `--socks4a`, `--socks5`, `--socks5-hostname`) | ❌ reported |
 | `--proxy-digest`, `--proxy-ntlm`, `--noproxy` | ❌ / ⚪ |
 
-## 7. Redirections, robustesse, temps
+## 7. Redirects, resilience, timing
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| `-L`, `--location-trusted`, `--max-redirs`, `--post30x` | ✅ / 🟡 (sémantique urllib) |
-| `-m/--max-time` → `timeout` de `urlopen` | ✅ |
-| `--connect-timeout` | 🟡 approximé |
-| `--retry`, `--retry-delay` (backoff exponentiel sur 408/429/5xx) | ✅ |
-| `--retry-all-errors`, `--retry-max-time`, `--retry-connrefused` | ⚪ acceptées, non différenciées |
-| Reprise de transfert (`-C/--continue-at`, offset explicite) | ✅ via en-tête `Range` |
+| `-L`, `--location-trusted`, `--max-redirs`, `--post30x` | ✅ / 🟡 (urllib semantics) |
+| `-m/--max-time` → `urlopen` `timeout` | ✅ |
+| `--connect-timeout` | 🟡 approximated |
+| `--retry`, `--retry-delay` (exponential backoff on 408/429/5xx) | ✅ |
+| `--retry-all-errors`, `--retry-max-time`, `--retry-connrefused` | ⚪ accepted, not differentiated |
+| Transfer resume (`-C/--continue-at`, explicit offset) | ✅ via `Range` header |
 
 ## 8. Variables
 
-Détail complet : [variables.md](variables.md).
+Full detail: [variables.md](variables.md).
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| `{{nom}}` (Postman) partout, `$VAR`/`${VAR}` selon le quoting shell | ✅ |
-| Dynamiques `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ |
-| `--variable NOM=valeur`, `--variable %NOM[=défaut]`, `--expand-url/-data/-header` (curl 8.3+) | ✅ (notre substitution est globale, celle de curl se limite aux `--expand-*`) |
-| `--variable NOM@fichier`, fonctions d'expansion (`{{nom:trim}}`, `{{nom:json}}`…) | ❌ signalés |
+| `{{name}}` (Postman) everywhere, `$VAR`/`${VAR}` per shell quoting | ✅ |
+| Dynamics `{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}` | ✅ |
+| `--variable NAME=value`, `--variable %NAME[=default]`, `--expand-url/-data/-header` (curl 8.3+) | ✅ (our substitution is global; curl's is limited to `--expand-*`) |
+| `--variable NAME@file`, expansion functions (`{{name:trim}}`, `{{name:json}}`…) | ❌ reported |
 
-## 9. Transferts et performance
+## 9. Transfers and performance
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| Upload HTTP (`-T` → PUT) | ✅ |
-| Exécution parallèle (`-Z/--parallel`, `--parallel-max`) | 🟡 les requêtes sont toutes renvoyées ; l'orchestration (`Promise.all`) revient à l'application |
-| Limitation de débit (`--limit-rate`, suffixes k/M/G) | ✅ (plafonne la lecture) |
-| `--rate`, seuils (`--speed-limit/-time`) | ⚪ |
-| Taille maximale (`--max-filesize`) | ⚪ |
-| HTTP/2, HTTP/3 (`--http2`, `--http3`) | ⚪ négociés par la plateforme |
+| HTTP upload (`-T` → PUT) | ✅ |
+| Parallel execution (`-Z/--parallel`, `--parallel-max`) | 🟡 all requests are returned; orchestration (`concurrent.futures`, `asyncio`…) is up to the application |
+| Rate limiting (`--limit-rate`, k/M/G suffixes) | ✅ (caps reading) |
+| `--rate`, thresholds (`--speed-limit/-time`) | ⚪ |
+| Maximum size (`--max-filesize`) | ⚪ |
+| HTTP/2, HTTP/3 (`--http2`, `--http3`) | ⚪ negotiated by the platform |
 
-## 10. Réseau avancé et DNS
+## 10. Advanced networking and DNS
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| `--resolve`, `--connect-to` | ✅ (Host/SNI d'origine préservés) |
-| `--unix-socket` | ✅ (connexion AF_UNIX) |
-| `--dns-servers`, `--doh-url`, `--interface`, `--local-port`, `--abstract-unix-socket` | ❌ signalés |
+| `--resolve`, `--connect-to` | ✅ (original Host/SNI preserved) |
+| `--unix-socket` | ✅ (AF_UNIX connection) |
+| `--dns-servers`, `--doh-url`, `--interface`, `--local-port`, `--abstract-unix-socket` | ❌ reported |
 | `-4`, `-6`, `--tcp-nodelay`, `--tcp-fastopen`, `--happy-eyeballs-timeout-ms`, `--keepalive-time` | ⚪ |
 
-## 11. Fonctions CLI (sans objet dans un SDK)
+## 11. CLI features (not applicable in an SDK)
 
-Le SDK renvoie une `Response` : l'application décide quoi en faire. Toutes ces
-options sont **acceptées sans erreur** pour qu'une commande copiée passe telle
-quelle : `-o`, `-O`, `-J`, `-D`, `-i`, `-s`, `-S`, `-v`, `-#`, `-w/--write-out`,
+The SDK returns a `Response`: the application decides what to do with it. All of
+these options are **accepted without error** so that a copied command passes as-is:
+`-o`, `-O`, `-J`, `-D`, `-i`, `-s`, `-S`, `-v`, `-#`, `-w/--write-out`,
 `--trace*`, `--stderr`, `--styled-output`, `--output-dir`, `--create-dirs`,
 `--remove-on-error`, `-f/--fail`, `--fail-with-body`, `--etag-save`,
 `--help`, `--version`.
 
-## 12. Divers
+## 12. Miscellaneous
 
-| Fonction | Statut |
+| Feature | Status |
 |---|---|
-| Requêtes conditionnelles (`-z/--time-cond`, `--etag-compare`) | ❌ signalées (posez `If-Modified-Since` / `If-None-Match` via `-H`) |
-| Fichier de configuration (`-K/--config`), `--libcurl` | ❌ signalés |
-| Caches HSTS / Alt-Svc (`--hsts`, `--alt-svc`) | ❌ / ⚪ |
-| Lecture depuis stdin (`-d @-`) | ❌ signalée |
+| Conditional requests (`-z/--time-cond`, `--etag-compare`) | ❌ reported (set `If-Modified-Since` / `If-None-Match` via `-H`) |
+| Config file (`-K/--config`), `--libcurl` | ❌ reported |
+| HSTS / Alt-Svc caches (`--hsts`, `--alt-svc`) | ❌ / ⚪ |
+| Reading from stdin (`-d @-`) | ❌ reported |
 
 ---
 
-## En résumé
+## In short
 
-- **Tout le périmètre « appel HTTP applicatif » de curl est couvert** : requête,
-  corps, auth (Basic/Bearer/Digest), cookies, variables, redirections, retries,
-  timeout, globbing, multipart — plus l'import Postman.
-- **Les principaux protocoles non-HTTP sont couverts** par des adaptateurs
-  (SMTP, FTP/FTPS, SFTP, SCP, POP3, IMAP, MQTT, TFTP, FILE, SMB, WebSocket) —
-  voir [protocols.md](protocols.md). Le cœur reste
-  compartimenté : les adaptateurs à dépendance ne sont chargés qu'à l'usage.
-- **Restent hors périmètre** LDAP, TELNET, DICT, GOPHER, RTSP… :
-  signalés par `unsupported-protocol`.
-- Quelques fonctions HTTP non couvertes (auth-int, certificats clients, SOCKS,
-  conditionnelles `-z`) sont listées dans la
-  [feuille de route](../README.md#feuille-de-route) ou signalées par warning.
+- **The whole "application-level HTTP call" scope of curl is covered**: request,
+  body, auth (Basic/Bearer/Digest), cookies, variables, redirects, retries,
+  timeout, globbing, multipart — plus Postman import.
+- **The main non-HTTP protocols are covered** by adapters (SMTP, FTP/FTPS, SFTP,
+  SCP, POP3, IMAP, MQTT, TFTP, FILE, SMB, WebSocket) — see
+  [protocols.md](protocols.md). The core stays compartmentalized: dependency-based
+  adapters are loaded only on use.
+- **Out of scope** are LDAP, TELNET, DICT, GOPHER, RTSP…: reported through
+  `unsupported-protocol`.
+- A few uncovered HTTP features (auth-int, client certificates, SOCKS, conditional
+  `-z`) are listed in the [roadmap](../README.md#roadmap) or reported by a warning.

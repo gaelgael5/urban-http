@@ -1,19 +1,21 @@
-# Variables — guide complet
+# Variables — full guide
 
-`parse_curl` et `parse_postman` acceptent tous deux un dictionnaire `variables` :
+*(Version française : [variables.fr.md](variables.fr.md))*
+
+Both `parse_curl` and `parse_postman` accept a `variables` dictionary:
 
 ```python
 parse_curl(command, {"baseUrl": "https://api.example.com", "TOKEN": "tok-42"})
 parse_postman(collection_json, {"baseUrl": "https://api.example.com"})
 ```
 
-Trois mécanismes, implémentés dans un module unique (`urban_http/variables.py`)
-partagé par les deux parsers.
+Three mechanisms, implemented in a single module (`urban_http/variables.py`)
+shared by both parsers.
 
-## 1. Placeholders Postman `{{nom}}`
+## 1. Postman placeholders `{{name}}`
 
-Substitués **partout** : URL, en-têtes, corps, authentification — dans les
-commandes curl comme dans les collections Postman.
+Substituted **everywhere**: URL, headers, body, authentication — in curl commands
+as well as in Postman collections.
 
 ```python
 r = parse_curl("curl -H 'X-Api-Key: {{apiKey}}' {{baseUrl}}/users",
@@ -21,71 +23,69 @@ r = parse_curl("curl -H 'X-Api-Key: {{apiKey}}' {{baseUrl}}/users",
 r.requests[0].url  # "https://api.example.com/users"
 ```
 
-## 2. Variables shell `$VAR` et `${VAR}` (commandes curl)
+## 2. Shell variables `$VAR` and `${VAR}` (curl commands)
 
-Une commande copiée d'un script contient souvent des variables d'environnement.
-Le SDK les résout **comme bash l'aurait fait** avant d'appeler curl :
+A command copied from a script often contains environment variables. The SDK
+resolves them **the way bash would have** before calling curl:
 
-| Contexte | Comportement | Exemple |
+| Context | Behavior | Example |
 |---|---|---|
-| Argument nu | ✅ substitué | `curl https://$HOST/me` |
-| Quotes doubles `"..."` | ✅ substitué | `-H "Authorization: Bearer $TOKEN"` |
-| Quotes simples `'...'` | ❌ jamais (comme bash) | `-d '$TOKEN'` envoie littéralement `$TOKEN` |
+| Bare argument | ✅ substituted | `curl https://$HOST/me` |
+| Double quotes `"..."` | ✅ substituted | `-H "Authorization: Bearer $TOKEN"` |
+| Single quotes `'...'` | ❌ never (like bash) | `-d '$TOKEN'` sends `$TOKEN` literally |
 
-Deux choix volontaires, plus sûrs pour un SDK :
+Two deliberate choices, safer for an SDK:
 
-- **Opt-in** : sans dictionnaire `variables`, aucun `$` n'est touché et aucun
-  warning n'est émis (un mot de passe `pa$$word` reste intact).
-- **Pas de découpage en mots** : une valeur avec espaces reste dans son token.
+- **Opt-in**: without a `variables` dictionary, no `$` is touched and no warning is
+  emitted (a `pa$$word` password stays intact).
+- **No word splitting**: a value with spaces stays in its token.
 
-## 3. Variables dynamiques Postman `{{$...}}`
+## 3. Postman dynamic variables `{{$...}}`
 
-Générées à **chaque occurrence** (deux `{{$guid}}` donnent deux UUID différents).
-Aucune option à passer.
+Generated at **each occurrence** (two `{{$guid}}` give two different UUIDs). No
+option to pass.
 
-| Variable | Valeur |
+| Variable | Value |
 |---|---|
 | `{{$guid}}`, `{{$randomUUID}}` | UUID v4 (`uuid.uuid4()`) |
-| `{{$timestamp}}` | secondes Unix |
-| `{{$isoTimestamp}}` | horodatage ISO 8601 |
-| `{{$randomInt}}` | entier 0–1000 |
+| `{{$timestamp}}` | Unix seconds |
+| `{{$isoTimestamp}}` | ISO 8601 timestamp |
+| `{{$randomInt}}` | integer 0–1000 |
 
-Toute autre dynamique est laissée telle quelle et signalée
-(`unsupported-dynamic-variable`).
+Any other dynamic is left as-is and reported (`unsupported-dynamic-variable`).
 
-## Environnements Postman
+## Postman environments
 
 ```python
 from urban_http import parse_postman_environment, parse_postman
 
-variables = parse_postman_environment(env_json)   # {values: [{key, value, enabled}]} ou {clé: valeur}
+variables = parse_postman_environment(env_json)   # {values: [{key, value, enabled}]} or {key: value}
 parse_postman(collection_json, variables)
 ```
 
-Priorité : `variables` (environnement) **>** variables de la collection, comme
-dans Postman.
+Priority: `variables` (environment) **>** collection variables, as in Postman.
 
-## Variables non résolues : jamais d'échec silencieux
+## Unresolved variables: never a silent failure
 
-Une variable sans valeur est **laissée telle quelle** et signalée :
+A variable without a value is **left as-is** and reported:
 
-| Code | Déclencheur |
+| Code | Trigger |
 |---|---|
-| `unresolved-variable` | `{{nom}}` sans valeur |
-| `unresolved-shell-variable` | `$NOM` absent du dictionnaire |
-| `unsupported-dynamic-variable` | `{{$dynamique}}` non prise en charge |
+| `unresolved-variable` | `{{name}}` without a value |
+| `unresolved-shell-variable` | `$NAME` absent from the dictionary |
+| `unsupported-dynamic-variable` | unsupported `{{$dynamic}}` |
 
 ```python
 r = parse_curl("curl {{apiHost}}/users")
-r.requests[0].url     # "{{apiHost}}/users" — conservé
+r.requests[0].url     # "{{apiHost}}/users" — kept
 r.warnings[0].code    # "unresolved-variable"
 ```
 
-## Variables natives curl 8.3+
+## Native curl 8.3+ variables
 
-`--variable NOM=valeur`, `--variable %NOM[=défaut]` et `--expand-url/-data/-header`
-sont pris en charge (la substitution `{{...}}` du SDK est un sur-ensemble des
-`--expand-*` de curl).
+`--variable NAME=value`, `--variable %NAME[=default]` and
+`--expand-url/-data/-header` are supported (the SDK's `{{...}}` substitution is a
+superset of curl's `--expand-*`).
 
 ```python
 parse_curl("curl --variable host=api.e.com --expand-url 'https://{{host}}/ping'")

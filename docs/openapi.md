@@ -1,24 +1,26 @@
 # OpenAPI → curl
 
-`openapi_to_curl(contrat)` lit un contrat **OpenAPI v3.x** (et, au mieux, Swagger
-v2) et renvoie, pour chaque opération (path + méthode), une commande curl prête à
-l'emploi avec des variables `{{...}}` injectables.
+*(Version française : [openapi.fr.md](openapi.fr.md))*
+
+`openapi_to_curl(contract)` reads an **OpenAPI v3.x** contract (and, best-effort,
+Swagger v2) and returns, for each operation (path + method), a ready-to-use curl
+command with injectable `{{...}}` variables.
 
 ```python
 from urban_http import openapi_to_curl
 
-operations = openapi_to_curl(contrat)   # dict, JSON, ou YAML (extra pyyaml)
+operations = openapi_to_curl(contract)   # dict, JSON, or YAML (pyyaml extra)
 for op in operations:
     print(op.method, op.path)
     print(op.curl)
     print(op.example_variables)
 ```
 
-Le contrat peut être un **dict déjà parsé**, une **chaîne JSON**, ou une **chaîne
-YAML** (nécessite `pip install "urban-http[openapi]"` pour pyyaml ; le JSON ne
-requiert rien).
+The contract can be an **already-parsed dict**, a **JSON string**, or a **YAML
+string** (requires `pip install "urban-http[openapi]"` for pyyaml; JSON needs
+nothing).
 
-## Ce que renvoie chaque opération
+## What each operation returns
 
 ```python
 @dataclass
@@ -27,11 +29,11 @@ class CurlOperation:
     path: str                        # "/users/{id}"
     operation_id: Optional[str]
     summary: Optional[str]
-    curl: str                        # la commande curl, avec des {{placeholders}}
-    variables: list[str]             # noms des {{...}} présents dans la commande
-    example_variables: dict          # {nom: valeur} prêt pour parse_curl(curl, …)
-    parameters: list[OperationParam] # tableau des paramètres (path/query/header/cookie)
-    body_example: Any                # modèle générique du corps (ou None)
+    curl: str                        # the curl command, with {{placeholders}}
+    variables: list[str]             # names of the {{...}} present in the command
+    example_variables: dict          # {name: value} ready for parse_curl(curl, …)
+    parameters: list[OperationParam] # parameter table (path/query/header/cookie)
+    body_example: Any                # generic body model (or None)
     content_type: Optional[str]
 ```
 
@@ -42,65 +44,63 @@ class OperationParam:
     location: str      # "path" | "query" | "header" | "cookie"
     required: bool
     type: str          # "integer", "string<date-time>"…
-    example: Any        # valeur type (typée) suggérée
+    example: Any        # suggested typed example value
     placeholder: str   # "{{id}}"
 ```
 
-## Génération du modèle (corps et valeurs d'exemple)
+## Model generation (body and example values)
 
-Les propriétés sont générées **exhaustivement** (requises ou non), avec des
-valeurs types :
+Properties are generated **exhaustively** (required or not), with typical values:
 
-| Schéma | Valeur générée |
+| Schema | Generated value |
 |---|---|
-| chaîne | le **nom de la propriété** (`"nom"` pour `nom`) |
-| chaîne `format: date` | la date du jour (`2026-11-08`) |
-| chaîne `format: date-time` | l'instant courant (`2026-11-08T14:30:00Z`) |
-| chaîne `format: time` | l'heure courante (`14:30:00`) |
-| entier / nombre | `0` |
-| booléen | `false` |
-| **sous-objet** | le sous-objet, **développé récursivement** |
-| **tableau** | **toujours un seul élément** |
-| `enum` | la première valeur de l'énumération |
-| `example` / `default` explicites | cette valeur (jugée plus utile) |
+| string | the **property name** (`"name"` for `name`) |
+| string `format: date` | today's date (`2026-11-08`) |
+| string `format: date-time` | the current instant (`2026-11-08T14:30:00Z`) |
+| string `format: time` | the current time (`14:30:00`) |
+| integer / number | `0` |
+| boolean | `false` |
+| **sub-object** | the sub-object, **expanded recursively** |
+| **array** | **always a single element** |
+| `enum` | the first value of the enumeration |
+| explicit `example` / `default` | that value (deemed more useful) |
 
-Les `$ref` locaux (`#/components/schemas/…` et `#/definitions/…`) sont résolus.
-`allOf` est fusionné ; `oneOf`/`anyOf` prend le premier schéma. Un schéma
-**récursif** (qui se référence) est coupé dès la ré-occurrence du `$ref`, pour
-garantir la terminaison.
+Local `$ref`s (`#/components/schemas/…` and `#/definitions/…`) are resolved.
+`allOf` is merged; `oneOf`/`anyOf` takes the first schema. A **recursive** schema
+(one that references itself) is cut at the first `$ref` re-occurrence, to guarantee
+termination.
 
-## Intégration avec le reste du SDK
+## Integration with the rest of the SDK
 
-`example_variables` est **prêt à passer à `parse_curl`** : les valeurs sont des
-chaînes injectables, et les `{{placeholders}}` de la commande sont exactement les
-clés du dictionnaire.
+`example_variables` is **ready to pass to `parse_curl`**: the values are injectable
+strings, and the command's `{{placeholders}}` are exactly the dictionary keys.
 
 ```python
 from urban_http import openapi_to_curl, parse_curl, execute
 
-op = openapi_to_curl(contrat)[0]
+op = openapi_to_curl(contract)[0]
 req = parse_curl(op.curl, op.example_variables).requests[0]
-# req est une requête HTTP résolue, prête pour execute(req)
+# req is a resolved HTTP request, ready for execute(req)
 ```
 
-Vous pouvez aussi remplacer les valeurs d'exemple par les vôtres :
+You can also replace the example values with your own:
 
 ```python
-mes_valeurs = {**op.example_variables, "orderId": "12345", "baseUrl": "https://prod.api"}
-parse_curl(op.curl, mes_valeurs)
+my_values = {**op.example_variables, "orderId": "12345", "baseUrl": "https://prod.api"}
+parse_curl(op.curl, my_values)
 ```
 
-## URL de base
+## Base URL
 
-L'URL de base vient de `servers[0].url` (v3) ou `schemes`+`host`+`basePath` (v2).
-Les variables de serveur `{var}` deviennent `{{var}}` (avec leur valeur par défaut
-dans `example_variables`). En l'absence de serveur, `{{baseUrl}}` est utilisé. On
-peut forcer l'URL : `openapi_to_curl(contrat, base_url="http://localhost:8080")`.
+The base URL comes from `servers[0].url` (v3) or `schemes`+`host`+`basePath` (v2).
+Server variables `{var}` become `{{var}}` (with their default value in
+`example_variables`). When there is no server, `{{baseUrl}}` is used. You can force
+the URL: `openapi_to_curl(contract, base_url="http://localhost:8080")`.
 
-## Ligne de commande
+## Command line
 
 ```bash
-urban-http --openapi contrat.json           # affiche les commandes curl
-urban-http --openapi contrat.yaml --json     # sortie JSON structurée
-cat contrat.json | urban-http --openapi -     # depuis stdin
+urban-http --openapi contract.json           # prints the curl commands
+urban-http --openapi contract.yaml --json     # structured JSON output
+cat contract.json | urban-http --openapi -     # from stdin
 ```
