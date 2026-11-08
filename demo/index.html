@@ -166,10 +166,12 @@ const EXAMPLES = [
     { label: "Fichier local", cmd: "curl file:///etc/hostname" },
     { label: "Partage SMB", cmd: "curl smb://serveur.example.com/partage/rapport.xlsx" },
     { label: "WebSocket", cmd: "curl wss://echo.websocket.org/ -d 'bonjour'" },
+    { label: "Lecture IMAP", cmd: "curl imaps://user:pass@mail.example.com/INBOX/42" },
+    { label: "Copie SCP", cmd: "curl scp://alice@serveur.example.com/home/alice/data.csv" },
   ]},
   { group: "Sans adaptateur", items: [
-    { label: "IMAP", cmd: "curl imaps://mail.example.com/INBOX", warn: true },
     { label: "LDAP", cmd: "curl ldap://annuaire.example.com/dc=exemple", warn: true },
+    { label: "TELNET", cmd: "curl telnet://routeur.example.com:23", warn: true },
   ]},
 ];
 

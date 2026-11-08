@@ -24,6 +24,8 @@ dependencies = []
 # Chaque protocole qui requiert une bibliothèque tierce est un extra PyPI.
 # Exemple : pip install "urban-http[sftp,mqtt]"
 sftp = ["paramiko>=3"]
+# SCP partage paramiko avec SFTP. IMAP, lui, n'a besoin d'aucune dépendance (imaplib).
+scp = ["paramiko>=3"]
 mqtt = ["paho-mqtt>=2"]
 smb = ["smbprotocol>=1.12"]
 # WebSocket côté client : websockets couvre tous les Python >= 3.9.

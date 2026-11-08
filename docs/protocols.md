@@ -7,8 +7,8 @@ MQTT. urban-http couvre ces protocoles via un **sous-système compartimenté**
 un **adaptateur** qui s'appuie sur la bibliothèque standard ou, à défaut, sur une
 bibliothèque tierce installée en **extra PyPI**.
 
-Protocoles couverts : **SMTP/SMTPS, FTP/FTPS, SFTP, POP3/POP3S, MQTT/MQTTS,
-TFTP, FILE, SMB/SMBS, WS/WSS (WebSocket)**.
+Protocoles couverts : **SMTP/SMTPS, FTP/FTPS, SFTP, SCP, POP3/POP3S,
+IMAP/IMAPS, MQTT/MQTTS, TFTP, FILE, SMB/SMBS, WS/WSS (WebSocket)**.
 
 > Comme tout le SDK, une requête est **pilotée par la commande** que vous écrivez :
 > un adaptateur exécute une seule opération explicite (envoyer ce mail, téléverser
@@ -45,9 +45,11 @@ parsed = parse_command("curl ftp://bob@ftp.example.com/f.txt")
 | SMTP / SMTPS | `smtplib` (stdlib) | aucune |
 | FTP / FTPS | `ftplib` (stdlib) | aucune |
 | POP3 / POP3S | `poplib` (stdlib) | aucune |
+| IMAP / IMAPS | `imaplib` (stdlib) | aucune |
 | TFTP | `socket` (stdlib) | aucune |
 | FILE | `open` (stdlib) | aucune |
 | SFTP | paramiko | `pip install "urban-http[sftp]"` |
+| SCP | paramiko | `pip install "urban-http[scp]"` (= même paramiko que SFTP) |
 | MQTT / MQTTS | paho-mqtt | `pip install "urban-http[mqtt]"` |
 | SMB / SMBS | smbprotocol | `pip install "urban-http[smb]"` |
 | WS / WSS | websockets | `pip install "urban-http[websocket]"` |
@@ -66,6 +68,8 @@ l'extra à installer.
 | `curl -Q "CMD" ftp://h/f` | commande FTP brute avant le transfert |
 | `curl sftp://u@h/f` / `-T f sftp://u@h/f` | téléchargement / téléversement SFTP |
 | `curl pop3://u:p@h/` / `pop3://u:p@h/2` | liste des messages / message n°2 |
+| `curl imap://u:p@h/` / `imap://u:p@h/INBOX` / `imap://u:p@h/INBOX/42` | liste des dossiers / UIDs du dossier / message UID 42 |
+| `curl scp://u@h/chemin` / `-T f scp://u@h/chemin` | copie SSH : téléchargement / téléversement |
 | `curl mqtt://h/topic -d "msg"` / `mqtt://h/topic` | publication / lecture du 1er message |
 | `curl tftp://h/f` / `-T f tftp://h/f` | téléchargement / téléversement TFTP |
 | `curl file:///chemin` / `-T src file:///dest` | lecture / écriture d'un fichier local |
@@ -127,8 +131,12 @@ synchrone). L'opération : ouvrir la connexion (sous-protocoles via
 `-H "Sec-WebSocket-Protocol: ..."`), envoyer chaque message `-d`, lire la première
 réponse, refermer.
 
+> **SCP** copie un fichier unique via le transfert de fichiers SSH de paramiko,
+> équivalent fonctionnel de scp pour ce cas d'usage (et sans dépendance
+> supplémentaire par rapport à SFTP). **IMAP** lit via `imaplib` : liste des
+> dossiers, liste des UIDs d'un dossier, ou message complet par UID.
+
 ## Hors périmètre
 
-Les protocoles sans adaptateur (IMAP, LDAP, DICT, GOPHER, RTSP, SCP, TELNET…)
-restent signalés par le warning `unsupported-protocol`. Pour IMAP, une bibliothèque
-dédiée (imapclient) ; pour SCP, paramiko.
+Les protocoles sans adaptateur (LDAP, DICT, GOPHER, RTSP, TELNET…) restent
+signalés par le warning `unsupported-protocol`.

@@ -27,15 +27,15 @@ le SDK les analyse en requête structurée et les exécute via une bibliothèque
 | **HTTP / HTTPS** | le cœur | ✅ | urllib (stdlib) |
 | **SMTP / SMTPS** | envoi de mails (`--mail-from`, `--mail-rcpt`, corps via `-T`) | ✅ | nodemailer |
 | **FTP / FTPS** | transfert de fichiers (`-Q`, `--ftp-create-dirs`, `-l`) | ✅ | basic-ftp |
-| **SFTP** | transfert via SSH | ✅ | ssh2 |
-| **POP3 / POP3S** | lecture de boîte mail (liste, RETR n) | ✅ | node:net / node:tls |
+| **SFTP** | transfert via SSH | ✅ | paramiko (extra) |
+| **SCP** | copie via SSH | ✅ | paramiko (extra) |
+| **POP3 / POP3S** | lecture de boîte mail (liste, RETR n) | ✅ | poplib (stdlib) |
+| **IMAP / IMAPS** | boîte mail (dossiers, UIDs, fetch) | ✅ | imaplib (stdlib) |
 | **MQTT / MQTTS** | publier / lire un message | ✅ | mqtt.js |
 | **TFTP** | transfert UDP par blocs | ✅ | node:dgram |
 | **FILE** | lecture/écriture de fichier local | ✅ | node:fs |
 | **SMB / SMBS** | partage de fichiers | ✅ | @marsaud/smb2 |
 | **WS / WSS** | WebSocket (envoi/réception) | ✅ | websockets (extra) |
-| **IMAP(S)** | lecture de boîte mail | ❌ | imapflow… |
-| **SCP** | copie via SSH | ❌ | ssh2 (manuel) |
 | **LDAP(S), TELNET, DICT, GOPHER(S), RTSP, RTMP** | divers | ❌ | — |
 
 Les options propres aux protocoles couverts sont interprétées (`--mail-from`,
@@ -159,11 +159,11 @@ quelle : `-o`, `-O`, `-J`, `-D`, `-i`, `-s`, `-S`, `-v`, `-#`, `-w/--write-out`,
   corps, auth (Basic/Bearer/Digest), cookies, variables, redirections, retries,
   timeout, globbing, multipart — plus l'import Postman.
 - **Les principaux protocoles non-HTTP sont couverts** par des adaptateurs
-  (SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket) — voir
-  [protocols.md](protocols.md). Le cœur reste
+  (SMTP, FTP/FTPS, SFTP, SCP, POP3, IMAP, MQTT, TFTP, FILE, SMB, WebSocket) —
+  voir [protocols.md](protocols.md). Le cœur reste
   compartimenté : les adaptateurs à dépendance ne sont chargés qu'à l'usage.
-- **Restent hors périmètre** IMAP, LDAP, TELNET, DICT, GOPHER, RTSP, SCP… :
-  signalés par `unsupported-protocol` avec une alternative.
+- **Restent hors périmètre** LDAP, TELNET, DICT, GOPHER, RTSP… :
+  signalés par `unsupported-protocol`.
 - Quelques fonctions HTTP non couvertes (auth-int, certificats clients, SOCKS,
   conditionnelles `-z`) sont listées dans la
   [feuille de route](../README.md#feuille-de-route) ou signalées par warning.

@@ -34,10 +34,12 @@ from .mqtt import mqtt_adapter
 from .tftp import tftp_adapter
 from .smb import smb_adapter
 from .ws import ws_adapter
+from .imap import imap_adapter
+from .scp import scp_adapter
 
 _ALL_ADAPTERS = [
     file_adapter, smtp_adapter, ftp_adapter, sftp_adapter, pop3_adapter,
-    mqtt_adapter, tftp_adapter, smb_adapter, ws_adapter,
+    mqtt_adapter, tftp_adapter, smb_adapter, ws_adapter, imap_adapter, scp_adapter,
 ]
 
 
@@ -53,5 +55,5 @@ __all__ = [
     "get_protocol_adapter", "register_protocol", "registered_schemes", "unregister_protocol",
     "parse_protocol_command", "register_default_adapters",
     "file_adapter", "smtp_adapter", "ftp_adapter", "sftp_adapter", "pop3_adapter",
-    "mqtt_adapter", "tftp_adapter", "smb_adapter", "ws_adapter",
+    "mqtt_adapter", "tftp_adapter", "smb_adapter", "ws_adapter", "imap_adapter", "scp_adapter",
 ]

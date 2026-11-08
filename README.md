@@ -3,7 +3,9 @@
 SDK **Python** pour transformer une commande **curl** ou une **collection Postman**
 en **appel exécutable** — HTTP via la bibliothèque standard, et les autres
 protocoles de curl (SMTP, FTP, SFTP, POP3, MQTT, TFTP, FILE, SMB, WebSocket) via
-des adaptateurs dont les dépendances sont gérées en **extras PyPI**.
+des adaptateurs dont les dépendances sont gérées en **extras PyPI**. Protocoles
+couverts : HTTP, SMTP, FTP/FTPS, SFTP, SCP, POP3, IMAP, MQTT, TFTP, FILE, SMB,
+WebSocket.
 
 ```
 commande curl ───▶ parse_curl() ────┐
@@ -31,8 +33,9 @@ une bibliothèque tierce est un extra :
 | `websocket` | WS / WSS | websockets |
 | `web` | site de test local | flask (optionnel) |
 
-SMTP, FTP/FTPS, POP3, TFTP et FILE utilisent uniquement la bibliothèque standard
-(`smtplib`, `ftplib`, `poplib`, `socket`, `open`) : aucun extra.
+SMTP, FTP/FTPS, POP3, IMAP, TFTP et FILE utilisent uniquement la bibliothèque
+standard (`smtplib`, `ftplib`, `poplib`, `imaplib`, `socket`, `open`) : aucun
+extra. SCP partage paramiko avec SFTP.
 
 ## Utilisation
 
@@ -127,13 +130,13 @@ python -m pytest               # 148 tests : tokenizer, parser, Postman, variabl
 - **HTTP/HTTPS** : requête, corps, multipart, globbing, redirections, retries,
   timeout, auth Basic/Bearer/Digest, cookies (inline et fichiers Netscape),
   variables — plus l'import Postman. Détail : [docs/curl-use-cases.md](docs/curl-use-cases.md).
-- **Autres protocoles** : SMTP, FTP/FTPS, SFTP, POP3, MQTT, TFTP, FILE, SMB,
-  WebSocket. Détail : [docs/protocols.md](docs/protocols.md).
+- **Autres protocoles** : SMTP, FTP/FTPS, SFTP, SCP, POP3, IMAP, MQTT, TFTP,
+  FILE, SMB, WebSocket. Détail : [docs/protocols.md](docs/protocols.md).
 - **Panorama complet** (ce qui est couvert et ce qui ne l'est pas) :
   [docs/curl-coverage.md](docs/curl-coverage.md).
 
 ## Feuille de route
 
-- Protocoles restants : IMAP, SCP, LDAP.
+- Protocoles restants : LDAP, TELNET.
 - Digest `qop=auth-int`, certificats clients (`--cert`/`--key`).
 - Générateurs de code supplémentaires (httpx, requests).

@@ -97,6 +97,10 @@ def _protocol_request(scheme: str, request, warnings) -> dict:
             rows.append(["sous-protocoles", ", ".join(r.ws.subprotocols)])
         if r.ws.messages:
             rows.append(["messages", " | ".join(r.ws.messages)])
+    if r.imap:
+        rows.append(["dossier", r.imap.mailbox])
+        if r.imap.uid is not None:
+            rows.append(["uid", r.imap.uid])
     if r.payload:
         rows.append(["charge", ("@" + r.payload.file_path) if r.payload.file_path else (r.payload.text or "")])
     if r.output:

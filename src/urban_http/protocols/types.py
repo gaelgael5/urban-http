@@ -17,9 +17,10 @@ DEFAULT_PORTS: Dict[str, int] = {
     "smtp": 25, "smtps": 465, "ftp": 21, "ftps": 990, "sftp": 22,
     "pop3": 110, "pop3s": 995, "mqtt": 1883, "mqtts": 8883, "tftp": 69,
     "file": 0, "smb": 445, "smbs": 445, "ws": 80, "wss": 443,
+    "imap": 143, "imaps": 993, "scp": 22,
 }
 
-_SECURE = {"smtps", "ftps", "pop3s", "mqtts", "smbs", "wss"}
+_SECURE = {"smtps", "ftps", "pop3s", "mqtts", "smbs", "wss", "imaps"}
 
 
 def is_secure_scheme(scheme: str) -> bool:
@@ -59,6 +60,14 @@ class WsOptions:
 
 
 @dataclass
+class ImapOptions:
+    # Dossier (mailbox) sélectionné, ex: "INBOX".
+    mailbox: str = "INBOX"
+    # UID du message à récupérer, si précisé (imap://h/INBOX/42) ; sinon on liste.
+    uid: Optional[int] = None
+
+
+@dataclass
 class ProtocolRequest:
     scheme: str
     url: str
@@ -81,6 +90,7 @@ class ProtocolRequest:
     ftp: Optional[FtpOptions] = None
     mqtt: Optional[MqttOptions] = None
     ws: Optional[WsOptions] = None
+    imap: Optional[ImapOptions] = None
     warnings: List[ParseWarning] = field(default_factory=list)
 
 

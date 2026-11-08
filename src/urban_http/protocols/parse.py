@@ -14,6 +14,7 @@ from ..variables import create_variable_context, substitute_placeholders, variab
 from .types import (
     DEFAULT_PORTS,
     FtpOptions,
+    ImapOptions,
     MqttOptions,
     Payload,
     ProtocolRequest,
@@ -32,7 +33,7 @@ VALUE_OPTIONS = {
 
 KNOWN_SCHEMES = {
     "smtp", "smtps", "ftp", "ftps", "sftp", "pop3", "pop3s", "mqtt", "mqtts",
-    "tftp", "file", "smb", "smbs", "ws", "wss",
+    "tftp", "file", "smb", "smbs", "ws", "wss", "imap", "imaps", "scp",
 }
 
 _SCHEME = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://")
@@ -193,6 +194,10 @@ def _build_protocol_request(scheme: str, raw_url: str, tokens: List[str], var_ct
     direction = "download"
     if scheme in ("smtp", "smtps"):
         direction = "send"
+    elif scheme in ("imap", "imaps"):
+        # imap://h/INBOX/42 → lecture du message ; imap://h/ ou imap://h/INBOX → listage
+        _, uid = _imap_mailbox_uid(path)
+        direction = "download" if uid is not None else "list"
     elif o.upload is not None:
         direction = "upload"
     elif o.list_only:
@@ -233,9 +238,26 @@ def _build_protocol_request(scheme: str, raw_url: str, tokens: List[str], var_ct
                 other_headers.append((n, v))
         req.ws = WsOptions(subprotocols=subprotocols, messages=o.data)
         req.headers = other_headers
+    if scheme in ("imap", "imaps"):
+        mailbox, uid = _imap_mailbox_uid(path)
+        req.imap = ImapOptions(mailbox=mailbox or "INBOX", uid=uid)
 
     warnings.extend(variable_warnings(var_ctx))
     return req
+
+
+def _imap_mailbox_uid(path: str):
+    """imap://h/Dossier/42 → ("Dossier", 42) ; imap://h/Dossier → ("Dossier", None) ;
+    imap://h/ → ("", None). Un dernier segment numérique est interprété comme UID.
+    """
+    segments = [s for s in path.split("/") if s != ""]
+    if not segments:
+        return "", None
+    if segments[-1].isdigit():
+        uid = int(segments[-1])
+        mailbox = "/".join(segments[:-1])
+        return mailbox, uid
+    return "/".join(segments), None
 
 
 def _resolve_payload(o: _Scanned, scheme: str, direction: str) -> Optional[Payload]:

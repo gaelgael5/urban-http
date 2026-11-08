@@ -743,6 +743,9 @@ def _protocol_hint(scheme: str) -> str:
         "tftp": " TFTP est pris en charge via run().",
         "file": " FILE est pris en charge via run().",
         "smb": " SMB est pris en charge via run() (extra smbprotocol).",
+        "imap": " IMAP est pris en charge via run() (imaplib).",
+        "imaps": " IMAP est pris en charge via run() (imaplib).",
+        "scp": " SCP est pris en charge via run() (extra paramiko).",
     }
     return hints.get(scheme, "")
 
